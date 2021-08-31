@@ -6,4 +6,4 @@ Integrated analysis of MATH subtypes reveals a novel screening strategy for earl
 "Diagnosis_final_model_LR.rds" corresponds to the diagnosis model.                                                                                                                 
 "Classifier_final_model_LR.rds" corresponds to the classifier.                                                                                                                                                                                                                                                                                                         
 
-Detail data and information were uploaded to https://share.weiyun.com/IcpDQhzt.
+Detail data and information were uploaded to https://share.weiyun.com/IcpDQhzt
