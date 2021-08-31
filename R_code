@@ -1,0 +1,2613 @@
+
+                                          ###Part I
+                                          
+library(data.table)
+library(glmnet)
+library(limma)
+library(ggplot2)
+library(R.utils)
+Sys.setenv(LANGUAGE = "en")
+options(stringsAsFactors = FALSE) 
+
+comgene <- intersect(rownames(tcga.expr),rownames(gse30219.expr))
+
+#diff
+pd <- data.frame(Samples = tcga.sinfo$samID,
+                 Group = tcga.sinfo$tissue,
+                 stringsAsFactors = FALSE)
+design <-model.matrix(~ -1 + factor(pd$Group, levels = c("Tumor","Normal")))
+colnames(design) <- c("Tumor","Normal")
+gset <- tcga.expr[comgene,pd$Samples]
+fit <- limma::lmFit(gset, design = design);
+contrastsMatrix <- limma::makeContrasts(Tumor - Normal, levels = c("Tumor", "Normal"))
+fit2 <- limma::contrasts.fit(fit, contrasts = contrastsMatrix)
+fit2 <- limma::eBayes(fit2, 0.01)
+resData <- limma::topTable(fit2, adjust = "fdr", sort.by = "B", number = 100000)
+resData <- as.data.frame(subset(resData, select=c("logFC","t","B","P.Value","adj.P.Val")))
+resData$id <- rownames(resData)
+colnames(resData) <- c("log2fc","t","B","pvalue","padj","id")
+resData$fc <- 2^resData$log2fc
+resData <- resData[order(resData$padj),c("id","fc","log2fc","pvalue","padj")]
+degs_tcga <- resData
+
+rm(contrastsMatrix)
+rm(design)
+rm(fit)
+rm(fit2)
+rm(gset)
+rm(pd)
+rm(resData)
+
+pd <- data.frame(Samples = gse30219.sinfo$samID,
+                 Group = gse30219.sinfo$tissue,
+                 stringsAsFactors = FALSE)
+design <-model.matrix(~ -1 + factor(pd$Group, levels = c("Tumor","Normal")))
+colnames(design) <- c("Tumor","Normal")
+gset <- gse30219.expr[comgene,pd$Samples]
+fit <- limma::lmFit(gset, design = design);
+contrastsMatrix <- limma::makeContrasts(Tumor - Normal, levels = c("Tumor", "Normal"))
+fit2 <- limma::contrasts.fit(fit, contrasts = contrastsMatrix)
+fit2 <- limma::eBayes(fit2, 0.01)
+resData <- limma::topTable(fit2, adjust = "fdr", sort.by = "B", number = 100000)
+resData <- as.data.frame(subset(resData, select=c("logFC","t","B","P.Value","adj.P.Val")))
+resData$id <- rownames(resData)
+colnames(resData) <- c("log2fc","t","B","pvalue","padj","id")
+resData$fc <- 2^resData$log2fc
+resData <- resData[order(resData$padj),c("id","fc","log2fc","pvalue","padj")]
+degs_gse30219<- resData
+
+rm(contrastsMatrix)
+rm(design)
+rm(fit)
+rm(fit2)
+rm(gset)
+rm(pd)
+rm(resData)
+
+pd <- data.frame(Samples = gse31210.sinfo$samID,
+                 Group = gse31210.sinfo$tissue,
+                 stringsAsFactors = FALSE)
+design <-model.matrix(~ -1 + factor(pd$Group, levels = c("Tumor","Normal")))
+colnames(design) <- c("Tumor","Normal")
+gset <- gse31210.expr[comgene,pd$Samples]
+fit <- limma::lmFit(gset, design = design);
+contrastsMatrix <- limma::makeContrasts(Tumor - Normal, levels = c("Tumor", "Normal"))
+fit2 <- limma::contrasts.fit(fit, contrasts = contrastsMatrix)
+fit2 <- limma::eBayes(fit2, 0.01)
+resData <- limma::topTable(fit2, adjust = "fdr", sort.by = "B", number = 100000)
+resData <- as.data.frame(subset(resData, select=c("logFC","t","B","P.Value","adj.P.Val")))
+resData$id <- rownames(resData)
+colnames(resData) <- c("log2fc","t","B","pvalue","padj","id")
+resData$fc <- 2^resData$log2fc
+resData <- resData[order(resData$padj),c("id","fc","log2fc","pvalue","padj")]
+degs_gse31210<- resData
+
+rm(contrastsMatrix)
+rm(design)
+rm(fit)
+rm(fit2)
+rm(gset)
+rm(pd)
+rm(resData)
+
+##RRA找共同上下调基因
+library(clusterProfiler)
+library(RobustRankAggreg)
+library(pheatmap)
+
+get_up <- function(df){
+  df$g=ifelse(df$padj>0.05,'stable', #if 判断：如果这一基因的P.Value>0.01，则为stable基因
+              ifelse( df$log2fc >1,'up', #接上句else 否则：接下来开始判断那些P.Value<0.01的基因，再if 判断：如果logFC >1.5,则为up（上调）基因
+                      ifelse( df$log2fc < -1,'down','stable') )#接上句else 否则：接下来开始判断那些logFC <1.5 的基因，再if 判断：如果logFC <1.5，则为down（下调）基因，否则为stable基因
+  )
+  print( table(df$g))
+  df=df[order(df$log2fc,decreasing = T),]
+  # rownames(df[df$g=='up',])
+  df[df$g=='up','id']
+}
+
+get_down <- function(df){
+  df$g=ifelse(df$padj>0.05,'stable', #if 判断：如果这一基因的P.Value>0.01，则为stable基因
+              ifelse( df$log2fc >1,'up', #接上句else 否则：接下来开始判断那些P.Value<0.01的基因，再if 判断：如果logFC >1.5,则为up（上调）基因
+                      ifelse( df$log2fc < -1,'down','stable') )#接上句else 否则：接下来开始判断那些logFC <1.5 的基因，再if 判断：如果logFC <1.5，则为down（下调）基因，否则为stable基因
+  )
+  print( table(df$g))
+  df=df[order(df$log2fc,decreasing = T),]
+  # rownames(df[df$g=='up',])
+  df[df$g=='down','id']
+}
+
+
+glist_up=list(get_up(degs_tcga)
+              ,get_up(degs_gse30219)
+              , get_up(degs_gse31210))
+glist_down=list(get_down(degs_tcga)
+                ,get_down(degs_gse30219)
+                , get_down(degs_gse31210))
+
+
+ups=aggregateRanks(glist = glist_up, N = length(unique(unlist(glist_up))))
+tmp_up=as.data.frame(table(unlist(glist_up)))
+ups$Freq=tmp_up[match(ups$Name,tmp_up[,1]),2]
+head(ups)
+
+downs=aggregateRanks(glist = glist_down, N = length(unique(unlist(glist_down))))
+tmp_down=as.data.frame(table(unlist(glist_down)))
+downs$Freq=tmp_down[match(downs$Name,tmp_down[,1]),2]
+head(downs)
+
+
+
+gs_up=rownames(subset(ups,ups$Score<0.05))
+gs_down=rownames(subset(downs,downs$Score<0.05))
+
+updat=data.frame(degtcga_up=degs_tcga[gs_up,'log2fc'],
+                 deggse30219_up=degs_gse30219[gs_up,'log2fc'],
+                 deggse31210_up=degs_gse31210[gs_up,'log2fc'] )
+rownames(updat)=gs_up
+pheatmap(updat,display_numbers = T)
+
+downdat=data.frame(degtcga_down=degs_tcga[gs_down,'log2fc'],
+                   deggse30219_down=degs_gse30219[gs_down,'log2fc'],
+                   deggse31210_down=degs_gse31210[gs_down,'log2fc'] )
+rownames(downdat)=gs_down
+pheatmap(downdat,display_numbers = T)
+
+colnames(updat)<-c("TCGA-GTEX","GSE30219","GSE31210")
+colnames(downdat)<-c("TCGA-GTEX","GSE30219","GSE31210")
+aldata<-rbind(updat,downdat)
+pheatmap(aldata,display_numbers = T)
+c_gene<-rownames(aldata)
+
+###7：3 Training cohort  internal validation cohort
+set.seed(20210518)
+tcga.sub<-sample(ncol(tcga.expr),7/10*ncol(tcga.expr))
+tcga.expr.train=tcga.expr[,tcga.sub]
+tcga.expr.test=tcga.expr[,-tcga.sub]
+tcga.train.sinfo<-tcga.sinfo[colnames(tcga.expr.train),]
+tcga.test.sinfo<-tcga.sinfo[colnames(tcga.expr.test),]
+
+
+###Construction of the diagnosis model
+###Elastic network
+x_ela<-scale(t(tcga.expr.train[c_gene,rownames(tcga.train.sinfo)]))
+y_ela<-as.factor(ifelse(tcga.train.sinfo$tissue== "Tumor",1,0))
+set.seed(20210519)
+cvfit <- cv.glmnet(x_ela, y_ela, 
+                    nfolds = nrow(x_ela), 
+                    family = "binomial", 
+                    grouped = FALSE, 
+                    alpha = 0.9, 
+                    type.measure = "deviance") 
+myCoefs <- coef(cvfit, s="lambda.min");
+elastic_fea <- rownames(coef(cvfit, s = 'lambda.min'))[coef(cvfit, s = 'lambda.min')[,1]!= 0]
+if(is.element("(Intercept)", elastic_fea)) {
+  elastic_fea <- elastic_fea[-1] 
+}
+
+###SVM
+library(tidyverse)
+library(glmnet)
+source('msvmRFE.R')   
+library(VennDiagram)
+library(sigFeature)
+library(e1071)
+library(caret)
+library(randomForest)
+
+svm_train<-t(tcga.expr.train[c_gene,rownames(tcga.train.sinfo)])
+svm_train<-cbind(tcga.train.sinfo,svm_train)
+svm_train=svm_train[,-1]
+svm_train$tissue=as.factor(ifelse(svm_train$tissue=="Tumor",1,0))
+
+input<-svm_train
+set.seed(20212021)
+svmRFE(input, k = 5, halve.above = 100) 
+
+nfold = 5
+nrows = nrow(input)
+folds = rep(1:nfold, len=nrows)[sample(nrows)]
+folds = lapply(1:nfold, function(x) which(folds == x))
+results = lapply(folds, svmRFE.wrap, input, k=5, halve.above=100)
+
+svmtop.features = WriteFeatures(results, input, save=F)
+head(svmtop.features)
+
+featsweep = lapply(1:173, FeatSweep.wrap, results, input) 
+no.info = min(prop.table(table(input[,1])))
+errors = sapply(featsweep, function(x) ifelse(is.null(x), NA, x$error))
+PlotErrors(errors, no.info=no.info)
+Plotaccuracy(1-errors,no.info=no.info)
+which.min(errors)
+svm_fea<-svmtop.features[1:which.min(errors),"FeatureName"]
+
+
+###RFB
+library(randomForest)
+library(ggplot2)
+RF_train<-svm_train
+RF_n<-length(names(RF_train))
+colnames(RF_train)<-gsub("-","_",colnames(RF_train),fixed = T)
+library(Boruta)
+
+boruta.train <- Boruta(tissue~., data = RF_train, doTrace = 2)
+print(boruta.train)
+plot(boruta.train, xlab = "", xaxt = "n")            
+lz<-lapply(1:ncol(boruta.train$ImpHistory),function(i)
+  
+  boruta.train$ImpHistory[is.finite(boruta.train$ImpHistory[,i]),i])
+names(lz) <- colnames(boruta.train$ImpHistory)
+Labels <- sort(sapply(lz,median))
+axis(side = 1,las=2,labels = names(Labels),at = 1:ncol(boruta.train$ImpHistory), cex.axis = 0.7)
+
+final.boruta <- TentativeRoughFix(boruta.train)   
+print(final.boruta)
+
+RFB_fea<-getSelectedAttributes(final.boruta, withTentative = F)  
+RFB_fea<-gsub("_","-",RFB_fea)
+boruta.df <- attStats(final.boruta)            
+class(boruta.df)
+print(boruta.df)
+
+
+###Xgboost
+library(Matrix)
+library(xgboost)
+xg_train<-svm_train
+xg_traindata1<-data.matrix(xg_train[,c(2:174)])
+xg_traindata2<-Matrix(xg_traindata1,sparse = T)
+xg_traindata3<-xg_train[,1]
+xg_traindata4<-list(data=xg_traindata2,label=xg_traindata3)
+xg_dtrain<-xgb.DMatrix(data = xg_traindata4$data, label = xg_traindata4$label)
+
+set.seed(2021201)
+xg_model<-xgboost(data=xg_dtrain,max_depth=6, eta=0.3, objective='binary:logistic', nround=25,
+                  subsample=0.8)
+xg_impor<-xgb.importance(names(xg_traindata4$data), model=xg_model)
+xgb.plot.importance(importance_matrix=xg_impor)
+xg_fea<-xg_impor$Feature
+
+###quick look
+##elasticnet
+ela_pred_train<-data.frame(prob = round(predict(cvfit, newx = x_ela,type="response"),4)[,1],
+                           tissue = tcga.train.sinfo$tissue)
+
+x_ela_test <- as.matrix(as.data.frame(scale(t(tcga.expr.test[c_gene,tcga.test.sinfo$samID]))))
+ela_pred_test <- data.frame(prob = round(predict(cvfit, newx = x_ela_test,type="response"),4)[,1],
+                        tissue = tcga.test.sinfo$tissue)
+
+x_ela_30219<-as.matrix(as.data.frame(scale(t(gse30219.expr[c_gene,gse30219.sinfo$samID]))))
+ela_pred_30219<-data.frame(prob = round(predict(cvfit, newx = x_ela_30219,type="response"),4)[,1],
+                           tissue = gse30219.sinfo$tissue)
+
+x_ela_31210<-as.matrix(as.data.frame(scale(t(gse31210.expr[c_gene,gse31210.sinfo$samID]))))
+ela_pred_31210<-data.frame(prob = round(predict(cvfit, newx = x_ela_31210,type="response"),4)[,1],
+                           tissue = gse31210.sinfo$tissue)
+
+ela_confuse_train<-ela_pred_train
+ela_confuse_train$prob<-ifelse(ela_confuse_train$prob<0.5,"N","T")
+table(ela_confuse_train$tissue,ela_confuse_train$prob)
+
+ela_confuse_test<-ela_pred_test
+ela_confuse_test$prob<-ifelse(ela_confuse_test$prob<0.5,"N","T")
+table(ela_confuse_test$tissue,ela_confuse_test$prob)
+
+ela_confuse_30219<-ela_pred_30219
+ela_confuse_30219$prob<-ifelse(ela_confuse_30219$prob<0.5,"N","T")
+table(ela_confuse_30219$tissue,ela_confuse_30219$prob)
+
+
+ela_confuse_31210<-ela_pred_31210
+ela_confuse_31210$prob<-ifelse(ela_confuse_31210$prob<0.5,"N","T")
+table(ela_confuse_31210$tissue,ela_confuse_31210$prob)
+
+##SVM
+svm_training<-svm_train[,c("tissue",svm_fea)]
+svm_model<-svm(tissue ~ ., 
+                 data = svm_training,
+                 type = 'C',kernel = 'radial' )
+
+svm_test<-t(tcga.expr.test[c_gene,rownames(tcga.test.sinfo)])
+svm_test<-as.data.frame(svm_test)
+svm_pred_test<-data.frame(prob =predict(svm_model,newdata = svm_test),tissue=tcga.test.sinfo$tissue)
+
+svm_30219<-t(gse30219.expr[c_gene,rownames(gse30219.sinfo)])
+svm_30219<-as.data.frame(svm_30219)
+svm_pred_30219<-data.frame(prob =predict(svm_model,newdata = svm_30219),tissue=gse30219.sinfo$tissue)
+
+svm_31210<-t(gse31210.expr[c_gene,rownames(gse31210.sinfo)])
+svm_31210<-as.data.frame(svm_31210)
+svm_pred_31210<-data.frame(prob =predict(svm_model,newdata = svm_31210),tissue=gse31210.sinfo$tissue)
+
+
+
+##RF
+RFbb<-gsub("-","_",RFB_fea)
+RF_training<-RF_train[,c("tissue",RFbb)]
+
+RF_num=floor(sqrt(ncol(RF_training)-1))
+set.seed(2021051)
+ntree_fit<-randomForest(tissue~.,data=RF_training,mtry=11,ntree=1000)
+plot(ntree_fit)
+
+RF_model<-randomForest(tissue ~ .,
+                       data = RF_training ,
+                       ntree= 1000 ,
+                       nPerm=50,
+                       mtry= 11  ,
+                       proximity = T,
+                       importance = T)
+varImpPlot(RF_model,main="Variable importance")
+
+RF_pred_train<-data.frame(prob =predict(RF_model,newdata = RF_training),tissue=tcga.train.sinfo$tissue)
+
+
+RF_test<-t(tcga.expr.test[c_gene,rownames(tcga.test.sinfo)])
+RF_test<-as.data.frame(RF_test)
+colnames(RF_test)<-gsub("-","_",colnames(RF_test))
+RF_pred_test<-data.frame(prob =predict(RF_model,newdata = RF_test),tissue=tcga.test.sinfo$tissue)
+
+RF_30219<-t(gse30219.expr[c_gene,rownames(gse30219.sinfo)])
+RF_30219<-as.data.frame(RF_30219)
+colnames(RF_30219)<-gsub("-","_",colnames(RF_30219))
+RF_pred_30219<-data.frame(prob =predict(RF_model,newdata = RF_30219),tissue=gse30219.sinfo$tissue)
+
+RF_31210<-t(gse31210.expr[c_gene,rownames(gse31210.sinfo)])
+RF_31210<-as.data.frame(RF_31210)
+colnames(RF_31210)<-gsub("-","_",colnames(RF_31210))
+RF_pred_31210<-data.frame(prob =predict(RF_model,newdata = RF_31210),tissue=gse31210.sinfo$tissue)
+
+table(RF_pred_train$tissue,RF_pred_train$prob)
+table(RF_pred_test$tissue,RF_pred_test$prob)
+table(RF_pred_30219$tissue,RF_pred_30219$prob)
+table(RF_pred_31210$tissue,RF_pred_31210$prob)
+
+##Xgboost
+#xg_pre_train<-data.frame(prob=predict(xg_model,newdata = xg_dtrain),tissue=tcga.train.sinfo$tissue)
+
+xg_test<-t(tcga.expr.test[c_gene,rownames(tcga.test.sinfo)])
+xg_test<-cbind(tcga.test.sinfo,xg_test)
+xg_test<-xg_test[,-1]
+xg_test$tissue=as.factor(ifelse(xg_test$tissue=="Tumor",1,0))
+xg_testdata1<-data.matrix(xg_test[,c(2:174)])
+xg_testdata2<-Matrix(xg_testdata1,sparse = T)
+xg_testdata3<-xg_test[,1]
+xg_testdata4<-list(data=xg_testdata2,label=xg_testdata3)
+xg_dtest<-xgb.DMatrix(data = xg_testdata4$data, label = xg_testdata4$label)
+xg_pre_test<-data.frame(prob=predict(xg_model,newdata = xg_dtest),tissue=tcga.test.sinfo$tissue)
+xg_confuse_test<-xg_pre_test
+xg_confuse_test$prob=ifelse(xg_confuse_test$prob<0.5,"N","T")
+table(xg_confuse_test$tissue,xg_confuse_test$prob)
+
+
+xg_30219<-t(gse30219.expr[c_gene,rownames(gse30219.sinfo)])
+xg_30219<-cbind(gse30219.sinfo,xg_30219)
+xg_30219<-xg_30219[,-1]
+xg_30219$tissue=as.factor(ifelse(xg_30219$tissue=="Tumor",1,0))
+xg_30219data1<-data.matrix(xg_30219[,c(2:174)])
+xg_30219data2<-Matrix(xg_30219data1,sparse = T)
+xg_30219data3<-xg_30219[,1]
+xg_30219data4<-list(data=xg_30219data2,label=xg_30219data3)
+xg_d30219<-xgb.DMatrix(data = xg_30219data4$data, label = xg_30219data4$label)
+xg_pre_30219<-data.frame(prob=predict(xg_model,newdata = xg_d30219),tissue=gse30219.sinfo$tissue)
+xg_confuse_30219<-xg_pre_30219
+xg_confuse_30219$prob=ifelse(xg_confuse_30219$prob<0.5,"N","T")
+table(xg_confuse_30219$tissue,xg_confuse_30219$prob)
+
+
+xg_31210<-t(gse31210.expr[c_gene,rownames(gse31210.sinfo)])
+xg_31210<-cbind(gse31210.sinfo,xg_31210)
+xg_31210<-xg_31210[,-1]
+xg_31210$tissue=as.factor(ifelse(xg_31210$tissue=="Tumor",1,0))
+xg_31210data1<-data.matrix(xg_31210[,c(2:174)])
+xg_31210data2<-Matrix(xg_31210data1,sparse = T)
+xg_31210data3<-xg_31210[,1]
+xg_31210data4<-list(data=xg_31210data2,label=xg_31210data3)
+xg_d31210<-xgb.DMatrix(data = xg_31210data4$data, label = xg_31210data4$label)
+xg_pre_31210<-data.frame(prob=predict(xg_model,newdata = xg_d31210),tissue=gse31210.sinfo$tissue)
+xg_confuse_31210<-xg_pre_31210
+xg_confuse_31210$prob=ifelse(xg_confuse_31210$prob<0.5,"N","T")
+table(xg_confuse_31210$tissue,xg_confuse_31210$prob)
+
+###intersection (Gaussin model)  Logistic Regression
+k_ga<-intersect(elastic_fea,intersect(RFB_fea,intersect(svm_fea,xg_fea)))
+##venn
+library(VennDiagram)        
+T<-venn.diagram(list(Elastic=elastic_fea,RFB=RFB_fea,SVM_RFE=svm_fea,Xgboost=xg_fea),
+                filename=NULL,
+                lwd=1,
+                lty=1, 
+                col=c("#223D6C","#D20A13","#088247","#DAA520"), 
+                fill=c("#223D6C","#D20A13","#088247","#DAA520"), 
+                cat.col=c("#223D6C","#D20A13","#088247","#DAA520"),
+                cat.cex = 2.5,
+                rotation.degree = 0,
+                main = "",
+                main.cex = 2,
+                cex=1.5,
+                alpha = 0.5,
+                reverse=TRUE)
+grid.draw(T)
+
+#Gaussian Mixture Model
+library(mclust)
+library(pROC)
+library(SimDesign)
+display.progress = function (index, totalN, breakN=20) {
+  
+  if ( index %% ceiling(totalN/breakN)  ==0  ) {
+    cat(paste(round(index*100/totalN), "% ", sep=""))
+  }
+}
+Sys.setenv(LANGUAGE = "en") 
+options(stringsAsFactors = FALSE)
+
+event <- "tissue"
+flist <- list()
+for (i in 1:length(k_ga)) {
+  message("--generate ",i,"  model...")
+  tmp <- combn(k_ga, m = i) 
+  for (j in 1:ncol(tmp)) {
+    f <- as.formula(paste0(event," ~ ",paste(tmp[,j],collapse = " + "))) 
+    flist <- append(flist, f)
+  }
+}
+
+df <- cbind.data.frame(tcga.sinfo$tissue,
+                       scale(t(tcga.expr[k_ga,rownames(tcga.sinfo)])))
+colnames(df)[1]<-"tissue"
+df$tissue=ifelse(df$tissue=="Tumor",1,0)
+df$tissue=as.factor(df$tissue)
+pred_LR <- list()
+aucDF <- NULL
+n.model <- 2^length(k_ga)-1
+for (i in 1:n.model) {
+  
+ 
+  display.progress(index = i,
+                   totalN = n.model)
+  
+  f <- flist[[i]] 
+  g <- setdiff(as.character(f),c(event,"~")) 
+  g <- unlist(strsplit(g," + ",fixed = T))
+  
+  
+  l <- glm(formula = f, 
+           data = df, 
+           family = "binomial", 
+           control = list(maxit = 50), 
+           na.action = na.exclude)
+  
+ 
+  pred_LR[[i]] <- data.frame(prob = predict(l, newdata = df,type="response"),
+                             group = df[,event],
+                             stringsAsFactors = F)
+  
+  
+  a <- quiet(auc(pred_LR[[i]]$group,
+                 pred_LR[[i]]$prob))
+  
+  
+  aucDF <- rbind.data.frame(aucDF,
+                            data.frame(model = i, 
+                                       auc = a, 
+                                       n.mirna = length(g), 
+                                       stringsAsFactors = F),
+                            stringsAsFactors = F)
+}
+
+mod <- Mclust(aucDF[,1:2])
+aucDF$mclust <- as.numeric(mod$classification)
+table(aucDF$mclust) 
+
+darkblue <- "#21498D"
+lightred <- "#FF7FBF"
+pdf("GMM cluster of all auc model combination.pdf", width = 5,height = 4)
+par(bty = "o", mgp = c(2,0.5,0), mar = c(3.1,4.1,1.1,1.1),tcl = -.25,las = 1)
+plot(mod,
+     what = "classification",
+     colors = c(darkblue,lightred), 
+     xlab = paste0("Sorted logistic regression models (1:",n.model,")"),
+     ylab = "")
+mtext("AUC of training models", side = 2, line = 2.5, las = 3)
+text(300,0.46,"cluster 1", cex = 1.3)
+text(600,0.58,"cluster 2", cex = 1.3)
+invisible(dev.off())
+##For cluster 2
+tmp <- aucDF[which(aucDF$mclust == 2),]
+maxAuc <- tmp[which.max(tmp$auc),"auc"]
+print(maxAuc) 
+bestModel_GMM <- flist[[tmp[which.max(tmp$auc),"model"]]]
+print(bestModel_GMM)
+
+
+##Logistic regression  Prognosis model  validation
+final_LR_train<-data.frame(tcga.train.sinfo[,"tissue"],
+                           scale(t(tcga.expr.train[k_ga,rownames(tcga.train.sinfo)])))
+colnames(final_LR_train)[1]<-"tissue"
+final_LR_train$tissue=as.factor(ifelse(final_LR_train$tissue=="Tumor",1,0))
+
+final_model_LR <- glm(tissue ~ ., 
+                data = final_LR_train, 
+                family = "binomial")
+
+final_LR_test<-data.frame(tcga.test.sinfo[,"tissue"],
+                          scale(t(tcga.expr.test[k_ga,rownames(tcga.test.sinfo)])))
+colnames(final_LR_test)[1]<-"tissue"
+final_pred_test<-data.frame(tissue=tcga.test.sinfo$tissue,prob=predict(final_model_LR,newdata = final_LR_test,
+                                                                       type = "response"))
+k_test<-final_pred_test
+k_test$prob<-as.numeric(ifelse(k_test$prob<0.5,0,1))
+k_test$tissue<-as.numeric(ifelse(k_test$tissue=="Normal",0,1))
+final_roc_test<-roc(k_test$tissue,k_test$prob)
+
+
+final_LR_30219<-data.frame(tissue=gse30219.sinfo$tissue,
+                           scale(t(gse30219.expr[k_ga,rownames(gse30219.sinfo)])))
+final_pred_30219<-data.frame(tissue=gse30219.sinfo$tissue,prob=predict(final_model_LR,newdata = final_LR_30219,
+                                                                        type = "response"))
+k_30219<-final_pred_30219
+k_30219$prob<-as.numeric(ifelse(k_30219$prob<0.5,0,1))
+k_30219$tissue<-as.numeric(ifelse(k_30219$tissue=="Normal",0,1))
+final_roc_30219<-roc(k_30219$tissue,k_30219$prob)
+
+
+
+final_LR_31210<-data.frame(tissue=gse31210.sinfo$tissue,
+                           scale(t(gse31210.expr[k_ga,rownames(gse31210.sinfo)])))
+final_pred_31210<-data.frame(tissue=gse31210.sinfo$tissue,prob=predict(final_model_LR,newdata = final_LR_31210,
+                                                                       type = "response"))
+k_31210<-final_pred_31210
+k_31210$prob<-as.numeric(ifelse(k_31210$prob<0.5,0,1))
+k_31210$tissue<-as.numeric(ifelse(k_31210$tissue=="Normal",0,1))
+final_roc_31210<-roc(k_31210$tissue,k_31210$prob)
+
+
+
+
+
+
+
+                              
+                                   ###########Part 2.1##############
+library(TCGAmutations)
+tcga_available()
+tcga_load(study = "LUAD")
+tcga_luad_mc3<-tcga_load(study = "LUAD")
+save(tcga_luad_mc3, file = "./Rdata/TCGA_LUAD_MC3_maf.Rdata")
+
+
+
+library(maftools)
+laml <- tcga_luad_mc3
+laml@data$t_vaf <- laml@data$t_alt_count/laml@data$t_depth
+
+samples <- laml@variants.per.sample[laml@variants.per.sample$Variants > 10,]
+samples <- as.character(samples$Tumor_Sample_Barcode)
+
+
+#seg <- “./raw_data/CNV_segment”
+LUAD_het <- lapply(samples,function(tsb){
+  #tsb <- samples[1]
+  #segFile=file.path(seg, paste0(tsb,".seg.txt”))
+  het=inferHeterogeneity(maf=laml, tsb = tsb,vafCol="t_vaf")
+  mathd=het$clusterMeans
+  mathd=mathd[mathd$cluster !="outlier",] 
+  #mathd=mathd[mathd$cluster !=”CN_altered”,]  
+  mathd=as.data.frame(table(mathd$Tumor_Sample_Barcode))  
+  mathd$MATH <- het$clusterData$MATH[1]
+  return(mathd)
+})
+LUAD_het <- do.call(rbind,LUAD_het)
+colnames(LUAD_het) <- c("Sample_ID","clusters","MATH")
+
+LUAD_het$sample=substr(LUAD_het$Sample_ID,start = 1,stop =16 )
+LUAD_het$indvi=substr(LUAD_het$Sample_ID,start = 1,stop = 12)
+rownames(LUAD_het)<-LUAD_het$sample
+tumorsam<-rownames(LUAD_het)[which(substr(rownames(LUAD_het),14,15)=="01")]
+LUAD_het=LUAD_het[tumorsam,]
+#seg = system.file('extdata', 'TCGA.AB.3009.hg19.seg.txt', package = 'maftools')
+#tcga.ab.3009.het = inferHeterogeneity(maf = laml, tsb = 'TCGA-AB-3009', segFile = seg, vafCol = 'i_TumorVAF_WU')
+
+
+library(ggplot2)
+library(ggpubr)
+
+ITH<-read.csv("NIHMsupple.csv",header = T,row.names = 1)
+ITH_LUAD<-subset(ITH,ITH$TCGA.Study=="LUAD")
+ITH_LUAD<-ITH_LUAD[,c("TCGA.Study","Intratumor.Heterogeneity")]
+ITH_LUAD=na.omit(ITH_LUAD)
+
+LUAD_het1<-LUAD_het
+rownames(LUAD_het1)<-LUAD_het1$indvi
+
+comsam<-intersect(rownames(LUAD_het1),rownames(ITH_LUAD))
+LUAD_het1<-LUAD_het1[comsam,]
+ITH_LUAD1<-ITH_LUAD[comsam,]
+cort<-data.frame(Intratumor.Heterogeneity=ITH_LUAD1[,"Intratumor.Heterogeneity"],
+                 MATH=LUAD_het1[,"MATH"],
+                 row.names = comsam)
+
+i<-ggscatter(cort,x = "MATH", y = "Intratumor.Heterogeneity",
+             add = "reg.line", conf.int = TRUE,    
+             add.params = list(fill = "lightgray")
+)+ stat_cor(method = "spearman")+theme_classic()
+
+###early-stage LUAD
+LUADexpr<-read.csv("expr.csv",header = T,row.names = 1)
+LUADph<-read.csv("luadph.csv",header = T,row.names = 1)
+colnames(LUADexpr)<-gsub(".","-",colnames(LUADexpr),fixed = T)
+early_sam<-intersect(rownames(LUADph[which(LUADph$stage=="early"),]),colnames(LUADexpr)) 
+
+early_math_sam<-intersect(rownames(LUAD_het),early_sam)
+
+early_luad_expr<-LUADexpr[,early_math_sam]
+early_luad_het<-LUAD_het[early_math_sam,]
+ITH_LUAD1$indvi<-rownames(ITH_LUAD1)
+cort1<-merge(early_luad_het,ITH_LUAD1,by="indvi")
+i2<-ggscatter(cort1,x = "MATH", y = "Intratumor.Heterogeneity",
+             add = "reg.line", conf.int = TRUE,    
+             add.params = list(fill = "lightgray")
+)+ stat_cor(method = "spearman")+theme_classic()
+
+###OS related
+library(survival)
+library(survminer)
+os<-read.table("TCGA-LUAD.survival.tsv",sep = "\t",header = T,row.names = 1)
+early_luad_os<-os[early_math_sam,]
+df<-data.frame(OS=early_luad_os[,"OS"],OS.time=early_luad_os[,"OS.time"],MATH=early_luad_het[,"MATH"],
+               row.names =early_math_sam )
+df<-na.omit(df)
+df$type<-ifelse(df$MATH<48.1,"low_math","high_math")
+df_fit <- survfit(Surv(OS.time, OS) ~ type, data = df)
+ggsurvplot(df_fit,
+           pval = TRUE, conf.int = FALSE,
+           risk.table = TRUE, 
+           risk.table.col = "strata", 
+           linetype = "strata", 
+           ggtheme = theme_classic2(), 
+           palette = c("#0F6869","#D8D040")
+)
+
+###cut-off  48.1
+early_luad_het$MATH_type<-ifelse(early_luad_het$MATH<48.1,"math_low","math_high")
+library(limma)
+pd <- data.frame(Samples = early_luad_het$sample,
+                 Group = early_luad_het$MATH_type,
+                 stringsAsFactors = FALSE)
+design <-model.matrix(~ -1 + factor(pd$Group, levels = c("math_high","math_low")))
+colnames(design) <- c("math_high","math_low")
+gset <- early_luad_expr[,pd$Samples]
+fit <- limma::lmFit(gset, design = design);
+contrastsMatrix <- limma::makeContrasts(math_high - math_low, levels = c("math_high","math_low"))
+fit2 <- limma::contrasts.fit(fit, contrasts = contrastsMatrix)
+fit2 <- limma::eBayes(fit2, 0.01)
+resData <- limma::topTable(fit2, adjust = "fdr", sort.by = "B", number = 100000)
+resData <- as.data.frame(subset(resData, select=c("logFC","t","B","P.Value","adj.P.Val")))
+resData$id <- rownames(resData)
+colnames(resData) <- c("log2fc","t","B","pvalue","padj","id")
+resData$fc <- 2^resData$log2fc
+resData <- resData[order(resData$padj),c("id","fc","log2fc","pvalue","padj")]
+
+degs_104<-resData[which(abs(resData$log2fc) > 0.5 & resData$padj < 0.05),] 
+
+###29signatures clustering
+library(GSVA)
+library(dplyr)
+library(GetoptLong)
+library(GenomicRanges)
+library(pheatmap)
+library(ComplexHeatmap)
+library(stringr)
+library(rtracklayer)
+library(SummarizedExperiment)
+immunity <- read.csv("29sigforss.csv", header = T)
+immunity <- immunity %>% 
+  split(., .$CellType) %>% 
+  lapply(., function(x)(x$Gene.Symbol))
+immunity <- lapply(immunity, unique)
+sig29gsva<-as.data.frame(t(gsva(as.matrix(early_luad_expr), immunity, method = "ssgsea")))
+pheatmap(t(sig29gsva), scale = "row", show_colnames = F, 
+         color = colorRampPalette(c("navy", "white", "firebrick3"))(50))
+ml<-sig29gsva
+ml<-data.frame(t(apply(ml,2,scale)))
+colnames(ml)<-rownames(sig29gsva)
+h1<-Heatmap(ml, cluster_rows = TRUE, cluster_columns = TRUE, 
+            clustering_method_columns = "ward.D2",show_row_names = TRUE,
+            show_column_names = FALSE,clustering_distance_columns = "euclidean", 
+            clustering_distance_rows = "euclidean",
+            clustering_method_rows  = "ward.D2",
+            color = colorRampPalette(c("navy", "white", "firebrick3"))(50))
+tree <- column_dend(h1)
+ind <- cutree(as.hclust(tree), k = 3)[order.dendrogram(tree)] 
+table(ind)
+ind<-as.data.frame(ind)
+colnames(ind)[1]<-"Immunecluster"
+ind$indvi<-substr(rownames(ind),start = 1,stop = 12)
+
+##
+colnames(ind)[2]<-"X_PATIENT"
+df2<-merge(early_luad_os,ind,by="X_PATIENT")
+df2<-na.omit(df2)
+df2$Immunecluster=as.factor(df2$Immunecluster)
+rownames(df2)<-df2$X_PATIENT
+df2$Immunecluster=ifelse(df2$Immunecluster=="1","C1",ifelse(df2$Immunecluster=="2","C2","C3"))
+df2_fit <- survfit(Surv(OS.time, OS) ~ Immunecluster, data = df2)
+ggsurvplot(df2_fit,
+           pval = TRUE, conf.int = FALSE,
+           risk.table = TRUE, # Add risk table
+           risk.table.col = "strata", # Change risk table color by groups
+           linetype = "strata", # Change line type by groups
+           ggtheme = theme_classic2() # Change ggplot2 theme
+)
+pair_te<-pairwise_survdiff(Surv(OS.time, OS) ~ Immunecluster,
+                       data = df2,p.adjust.method ="none")
+
+###DEG104 re-clustering
+library(ConsensusClusterPlus)
+library(pheatmap)
+Sys.setenv(LANGUAGE = "en") 
+options(stringsAsFactors = FALSE) 
+
+
+cluster_comgene1<-intersect(rownames(early_luad_expr),rownames(degs_104))
+cluster_comsam1<-early_math_sam
+indata1<-early_luad_expr[cluster_comgene1,cluster_comsam1]
+dim(indata1)
+
+subtype4 <- ConsensusClusterPlus(d = as.matrix(indata1),
+                                 maxK = 6, 
+                                 pItem = 0.8, 
+                                 pFeature = 1, 
+                                 reps = 1000, 
+                                 clusterAlg = "km", 
+                                 innerLinkage = "ward.D", 
+                                 finalLinkage = "ward.D", 
+                                 distance = "euclidean", 
+                                 seed = 123456,
+                                 plot = "png", 
+                                 writeTable = TRUE,
+                                 title = "deg104_km_ConsensusCluster") 
+
+
+geneclust4<-subtype4[[2]]
+table(geneclust4$consensusClass)
+samorder4<-sort(geneclust4$consensusClass)
+samorder4<-as.data.frame(samorder4)
+colnames(samorder4)[1]<-"cluster"
+samorder4$X_PATIENT<-substr(rownames(samorder4),start = 1,stop = 12)
+survival_deg104_km<-merge(early_luad_os,samorder4,by="X_PATIENT")
+survival_deg104_km_fit<-survfit(Surv(OS.time, OS) ~ cluster, 
+                                 data = survival_deg104_km)
+ggsurvplot(survival_deg104_km_fit,
+           pval = TRUE, conf.int = FALSE,
+           risk.table = TRUE, # Add risk table
+           risk.table.col = "strata", # Change risk table color by groups
+           linetype = "strata", # Change line type by groups
+           ggtheme = theme_classic2() # Change ggplot2 theme
+)
+pairwise_survdiff(Surv(OS.time, OS) ~ cluster,
+                  data = survival_deg104_km,p.adjust.method ="none")
+
+###
+
+###anti-PD(L)1 signatures
+Immunogenicity<-read.csv("PD(L)1_prediction.csv",header = T)
+Immunogenicity <- Immunogenicity %>% 
+  split(., .$CellType) %>% 
+  lapply(., function(x)(x$Gene.Symbol))
+Immunogenicity <- lapply(Immunogenicity, unique)
+sigpd1gsva<-as.data.frame(t(gsva(as.matrix(early_luad_expr), Immunogenicity, method = "ssgsea")))
+
+###ESTIMATE
+library(estimate)
+filterCommonGenes(input.f="early_luad_expr.txt", 
+                  output.f="commonGenes.gct", 
+                  id="GeneSymbol")
+
+estimateScore(input.ds = "commonGenes.gct",
+              output.ds="estimateScore.gct", 
+              platform="illumina")
+
+scores=read.table("estimateScore.gct",skip = 2,header = T)
+rownames(scores)=scores[,1]
+scores=t(scores[,3:ncol(scores)])
+rownames(scores)=gsub("\\.","\\-",rownames(scores))
+out=rbind(ID=colnames(scores),scores)
+
+### mRNAi
+library(dplyr)
+library(tibble)
+library(ggplot2)
+library(cowplot)
+Sys.setenv(LANGUAGE = "en") 
+options(stringsAsFactors = FALSE) 
+fnSig <- "pcbc-stemsig.tsv" 
+w <- read.delim(fnSig, header = FALSE, row.names = 1 ) %>% as.matrix() %>% drop()
+X <- early_luad_expr %>%
+  rownames_to_column(var="gene_id") %>%
+  filter( gene_id %in% names(w) ) %>%
+  column_to_rownames( "gene_id" ) %>% as.matrix()
+stopifnot( all( rownames(X) %in% names(w)))
+w <- w[ rownames(X) ]
+w[1:5]
+s <- apply( X, 2, function(z) {cor( z, w, method="sp", use="complete.obs" )} )
+s <- s - min(s)
+s <- s / max(s)
+s[1:5]
+ss <- data.frame(Sample.ID = names(s), mRNAsi = s)
+rnai<-ss
+colnames(rnai)[1]<-"sample"
+
+
+###
+###immune cell abundance
+TIICs_abundance<-read.csv("early_luad_tiics_abundance.csv",header = T,row.names = 1)
+colnames(TIICs_abundance)<-gsub(".","-",colnames(TIICs_abundance),fixed = T)
+
+d<-read.table("TIICs box input.txt",sep = "\t",header = T,row.names = 1)
+up<-read.table("up.txt",header = T, as.is = T, row.names = 1)
+down<-read.table("down.txt",header = T, as.is = T, row.names = 1)
+require(tidyr)
+require(ggplot2)
+box <- lapply(list(up=row.names(up), down=row.names(down)), function(ii) {
+  dd <- d[ii,]
+  dd$gene = rownames(dd)
+  d2 <- gather(dd, sample, expr, 1:389)
+  d2$cluster <- paste('cluster', sub(".*_(\\d)$", "\\1", d2$sample))
+  pvalues <- sapply(d2$gene, function(x) {
+    res <- aov(expr ~ cluster, data = subset(d2, gene == x))
+    summary(res)[[1]]$'Pr(>F)'[1] #
+  })
+  pv <- data.frame(gene = d2$gene, pvalue = pvalues)
+  
+  ## Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+  pv$sigcode <- cut(pv$pvalue, c(0, 0.001, 0.01, 0.05, 0.1, 1), 
+                    labels=c('***', '**', '*', '.', ' '))
+  
+  ggplot(d2, aes(gene, expr, fill=cluster)) + 
+    geom_boxplot() + 
+    geom_text(aes(gene, y=max(d2$expr) * 1.1, 
+                  label=pv$sigcode),
+              data=pv, inherit.aes=F) + 
+    xlab(NULL)+ylab("TIICs abundance")
+})
+
+require(cowplot)
+plot_grid(plotlist=box, labels=c("", ""), ncol=1)
+
+##TIDE
+library(pheatmap)
+dat<-read.table("early_luad_expr.txt",sep = "\t",header = T,row.names = 1)
+ann<-read.table("cluster_ann.txt",sep = "\t",header = T,row.names = 1)
+TIDE<-dat
+TIDE <- sweep(TIDE,2, apply(TIDE,2,median,na.rm=T))
+TIDE <- sweep(TIDE,1, apply(TIDE,1,median,na.rm=T))
+colnames(TIDE)<-gsub(".","-",colnames(TIDE),fixed = T)
+TIDE.res <- read.csv("TIDE_output.csv",header = T,row.names = 1,check.names = F,stringsAsFactors = F)
+ann$TIDE <- TIDE.res[rownames(ann),"Responder"]
+print(table(ann$TIDE,ann$cluster))
+print(fisher.test(table(ann$TIDE,ann$cluster))) 
+
+##prepare submap
+generateInputFileForSubMap <- function(in_gct, gct_file, cls_file, sam_info, type_name = "type"){
+  in_gct <- data.frame(GeneID=rownames(in_gct),
+                       description="na",
+                       in_gct, 
+                       stringsAsFactors = F,
+                       check.names = F)
+  cat("#1.2\n", file = gct_file)
+  cat(nrow(in_gct),"\t",ncol(in_gct)-2,"\n", file = gct_file, append = T)
+  cat(paste(colnames(in_gct), collapse = "\t"),"\n", file = gct_file, append = T)
+  for(i in 1:nrow(in_gct)) cat(paste(in_gct[i,], collapse = "\t"),"\n", file = gct_file, append = T)
+  
+  cat(nrow(sam_info),length(levels(factor(sam_info$rank))),1, "\n", file = cls_file )
+  cat("#", paste0(levels(factor(sam_info[, type_name])), collapse = " " ), "\n", file = cls_file, sep = "", append = T)
+  cat(as.numeric(factor(sam_info[, type_name])), file = cls_file, append = T)
+}
+
+# 
+skcm.immunotherapy.logNC <- read.table("skcm.immunotherapy.47samples.log2CountsNorm.txt",
+                                       sep = "\t",row.names = 1,header = T,check.names = F,stringsAsFactors = F) 
+rownames(skcm.immunotherapy.logNC) <- toupper(rownames(skcm.immunotherapy.logNC)) 
+skcm.immunotherapy.info <- read.table("skcm.immunotherapy.47sampleInfo.txt",
+                                      sep = "\t",row.names = 1,header = T,check.names = F,stringsAsFactors = F)
+
+skcm.immunotherapy.info <- skcm.immunotherapy.info[order(skcm.immunotherapy.info$label),]
+skcm.immunotherapy.info$rank <- rep(c(1,2,3,4),times=as.character(table(skcm.immunotherapy.info$label))) #1: CTLA4_noR 2: CTLA4_R 3:PD1_noR 4:PD1_R
+
+# 
+datdat<-as.data.frame((2^dat)-1)
+datdat=datdat[which(apply(datdat,1,function(x){return(sum(x>0))})>ncol(datdat)*0.9),]
+tmp<-datdat
+
+GENELIST <- intersect(rownames(tmp),rownames(skcm.immunotherapy.logNC)) 
+sam_info <- skcm.immunotherapy.info
+in_gct <- skcm.immunotherapy.logNC[GENELIST,rownames(skcm.immunotherapy.info)]
+
+# 
+gct_file <- "skcm.immunotherapy.for.SubMap.gct"
+cls_file <- "skcm.immunotherapy.for.SubMap.cls"
+generateInputFileForSubMap(in_gct = in_gct, gct_file = gct_file, cls_file = cls_file, sam_info = sam_info, type_name = "rank")
+
+samples.C1 <- rownames(ann[which(ann$cluster == "C1"),])
+samples.C2 <- rownames(ann[which(ann$cluster == "C2"),])
+
+sam_info <- data.frame("cluster"=c(samples.C1,samples.C2),row.names = c(samples.C1,samples.C2))
+sam_info$rank <- rep(c(1,2),times=c(length(samples.C1),length(samples.C2))) 
+
+gct_file <- "Immune2.for.SubMap.gct"
+cls_file <- "Immune2.for.SubMap.cls"
+
+in_gct <- log2(tmp[GENELIST,rownames(sam_info)] + 1) # 
+generateInputFileForSubMap(in_gct = in_gct, gct_file = gct_file, cls_file = cls_file, sam_info = sam_info, type_name = "rank")
+
+###submap for TIDE
+heatmap.YlGnPe <- c("#440259","#345F8C","#228C8A","#78CE51","#FAE71F")
+cherry    <- "#700353"
+lightgrey <- "#dcddde"
+
+tmp <- matrix(c(0.771,0.858,0.041,0.986,0.319,0.144,0.996,0.039, 
+                1,1,0.328,1,1,1,1,0.312), # Bonferroni校正p值
+              nrow = 4,byrow = T,dimnames = list(c("C1_p","C2_p","C1_b","C2_b"),c("CTAL4-noR","CTLA4-R","PD1-noR","PD1-R")))
+
+pheatmap(tmp, cellwidth = 30, cellheight = 30,
+         cluster_rows = F,cluster_cols = F,
+         color = heatmap.YlGnPe[5:1],
+         gaps_row = 2,
+         annotation_row = data.frame(pvalue=c("Nominal p value","Nominal p value","Bonferroni corrected","Bonferroni corrected"),row.names = rownames(tmp)),
+         annotation_colors = list(pvalue=c("Nominal p value"=lightgrey,"Bonferroni corrected"=cherry)),
+         filename = "heatmap_submap.pdf")
+
+tmp2<-matrix(c(0.771,0.858,0.041,0.986,0.319,0.144,0.996,0.039
+               ), # Bonferroni校正p值
+             nrow = 2,byrow = T,dimnames = list(c("C1_p","C2_p"),c("CTAL4-noR","CTLA4-R","PD1-noR","PD1-R")))
+
+pheatmap(tmp2, cellwidth = 30, cellheight = 30,
+         cluster_rows = F,cluster_cols = F,
+         color = heatmap.YlGnPe[5:1],
+         
+         annotation_row = data.frame(pvalue=c("Nominal p value","Nominal p value"),row.names = rownames(tmp2)),
+         annotation_colors = list(pvalue=c("Nominal p value"=cherry)),
+         filename = "heatmap_submap2.pdf")
+
+
+###correlation
+corall<-data.frame(cluster=ann[,"cluster"],Immunecluster=ind[,"Immunecluster"],TIDE=ann[,"TIDE"],
+                   CD8.Sig=sigpd1gsva[,"CD8.Sig"],CRMA.Sig=sigpd1gsva[,"CRMA.Sig"],EGIS=sigpd1gsva[,"EGIS"],
+                   IFNG.Sig=sigpd1gsva[,"IFNG.Sig"],TLS=sigpd1gsva[,"TLS"],B.cell_TIMER=timer[,"B.cell_TIMER"],
+                   T.cell.CD4._TIMER=timer[,"T.cell.CD4._TIMER"],T.cell.CD8._TIMER=timer[,"T.cell.CD8._TIMER"],Neutrophil_TIMER=timer[,"Neutrophil_TIMER"],
+                   Macrophage_TIMER=timer[,"Macrophage_TIMER"],Myeloid.dendritic.cell_TIMER=timer[,"Myeloid.dendritic.cell_TIMER"],
+                   PDCD1=early_luad_IC[,"PDCD1"],CD274=early_luad_IC[,"CD274"],PDCD1LG2=early_luad_IC[,"PDCD1LG2"],
+                   CTLA4=early_luad_IC[,"CTLA4"],CD80=early_luad_IC[,"CD80"],CD86=early_luad_IC[,"CD86"],
+                   StromalScore=out[,"StromalScore"],ImmuneScore=out[,"ImmuneScore"],
+                   ESTIMATEScore=out[,"ESTIMATEScore"],MATH=early_luad_het[,"MATH"],mRNAsi=rnai[,"mRNAsi"],row.names = comsam)
+
+###
+library(ggplot2)
+library(ggpubr)
+jco <- c("#2874C5","#EABF00")
+
+p<-wilcox.test(corall[which(corall$cluster == "C1"),"mRNAsi"],
+               corall[which(corall$cluster == "C2"),"mRNAsi"])$p.value
+
+ggplot(data = corall,aes(x = cluster, y = mRNAsi, fill = cluster))+
+  scale_fill_manual(values = jco[2:1]) + 
+  geom_violin(alpha=0.4, position = position_dodge(width = .75),
+              size=0.8, color="black") + 
+  geom_boxplot(notch = TRUE, outlier.size = -1, 
+               color="black", lwd=0.8, alpha = 0.7)+ 
+  geom_point(shape = 21, size=2, 
+             position = position_jitterdodge(), 
+             color="black", alpha=1)+ 
+  theme_classic() +
+  ylab(expression("mRNAsi")) +
+  xlab("")  +
+  annotate(geom="text", cex=6,
+           x=1.5, y=1, 
+           label=paste0("P ", ifelse(p<0.001, "< 0.001", paste0("= ",round(p,3)))), 
+           color="black") + 
+  theme(#panel.border = element_rect(colour = "black", fill=NA, size=0.2), 
+    axis.ticks = element_line(size=0.2,color="black"),
+    axis.ticks.length = unit(0.2,"cm"),
+    legend.position = "none",
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10))
+
+ggsave("cluster_mRNAsi.pdf", width = 4.5, height = 4)
+
+my_comparisons <- list( c("Immcluster1", "Immcluster2"), 
+                        c("Immcluster1", "Immcluster3"), 
+                        c("Immcluster2", "Immcluster3")) 
+blue   <- "#5bc0eb"
+grey   <- "#8693ab"
+darkred   <- "#F2042C"
+lightred  <- "#FF7FBF"
+
+ggplot(data = corall,aes(x = Immunecluster, 
+                      y = mRNAsi, 
+                      fill = Immunecluster))+ 
+  scale_fill_manual(values = c(blue, grey, lightred, darkred)) + 
+  geom_violin(alpha = 0.4, position = position_dodge(width = .75), 
+              size = 0.8, color="black") +
+  geom_boxplot(notch = TRUE, outlier.size = -1, 
+               color="black", lwd=0.8, alpha = 0.7) +
+  geom_point(shape = 21, size=2, 
+             position = position_jitterdodge(), 
+             color="black", alpha = 1) +
+  theme_classic() + 
+  ylab("mRNAsi") +
+  xlab("Immunecluster") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+        #panel.border = element_rect(colour = "black", fill=NA, size=0.2),
+        axis.ticks = element_line(size=0.2, color="black"),
+        axis.ticks.length = unit(0.2, "cm"),
+        legend.position = "none",
+        axis.title = element_text(size = 15),
+        axis.text = element_text(size = 10)) +
+  
+  # 
+  stat_compare_means(comparisons = my_comparisons) + 
+  stat_compare_means(method = "kruskal.test", label.y = min(corall$mRNAsi))
+                        
+ggsave("Immcluster_mRNAsi.pdf", width = 6, height = 6)
+
+ggscatter(corall,x = "MATH", y = "ImmuneScore",  
+             add = "reg.line", conf.int = TRUE,    
+             add.params = list(fill = "lightgray")
+)+stat_cor(method = "pearson")+theme_classic()
+
+library(ggplot2)
+a<-ggplot(corall, aes(cluster)) + geom_bar(aes(fill=Immunecluster), position="fill",colour="black")+
+  scale_fill_manual(values = c("#FFFF33","#33CCFF","#009900"))    #darkblue <- "#0772B9" lightblue <- "#48C8EF"
+b<-a+theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+theme(text=element_text(size=16,  family="serif"))
+
+
+
+
+                                  #####PART2.2######
+set.seed(20210528)
+tcga.sub<-sample(ncol(early_luad_expr),7/10*ncol(early_luad_expr))
+tcga.expr.train=early_luad_expr[,tcga.sub]
+tcga.expr.test=early_luad_expr[,-tcga.sub]
+tcga.train.sinfo<-ann[colnames(tcga.expr.train),]
+tcga.test.sinfo<-ann[colnames(tcga.expr.test),]
+
+
+###Classification model
+###Elastic network
+x_ela<-scale(t(tcga.expr.train[rownames(degs_104),rownames(tcga.train.sinfo)]))
+y_ela<-as.factor(ifelse(tcga.train.sinfo$cluster== "C2",1,0))
+set.seed(20210528)
+cvfit <- cv.glmnet(x_ela, y_ela, 
+                   nfolds = nrow(x_ela), 
+                   family = "binomial", 
+                   grouped = FALSE, 
+                   alpha = 0.9, 
+                   type.measure = "deviance") 
+myCoefs <- coef(cvfit, s="lambda.min");
+elastic_fea <- rownames(coef(cvfit, s = 'lambda.min'))[coef(cvfit, s = 'lambda.min')[,1]!= 0]
+if(is.element("(Intercept)", elastic_fea)) {
+  elastic_fea <- elastic_fea[-1] 
+}
+
+###SVM
+library(tidyverse)
+library(glmnet)
+source('msvmRFE.R')   
+library(VennDiagram)
+library(sigFeature)
+library(e1071)
+library(caret)
+library(randomForest)
+
+svm_train<-t(tcga.expr.train[rownames(degs_104),rownames(tcga.train.sinfo)])
+svm_train<-cbind(tcga.train.sinfo,svm_train)
+svm_train=svm_train[,-2]
+svm_train$cluster=as.factor(ifelse(svm_train$cluster=="C2",1,0))
+
+input<-svm_train
+set.seed(20212021)
+svmRFE(input, k = 5, halve.above = 100) 
+
+nfold = 5
+nrows = nrow(input)
+folds = rep(1:nfold, len=nrows)[sample(nrows)]
+folds = lapply(1:nfold, function(x) which(folds == x))
+results = lapply(folds, svmRFE.wrap, input, k=5, halve.above=100) 
+
+svmtop.features = WriteFeatures(results, input, save=F) 
+head(svmtop.features)
+
+featsweep = lapply(1:104, FeatSweep.wrap, results, input) 
+no.info = min(prop.table(table(input[,1])))
+errors = sapply(featsweep, function(x) ifelse(is.null(x), NA, x$error))
+PlotErrors(errors, no.info=no.info)
+Plotaccuracy(1-errors,no.info=no.info)
+which.min(errors)
+svm_fea<-svmtop.features[1:which.min(errors),"FeatureName"]
+
+
+###RF
+library(randomForest)
+library(ggplot2)
+RF_train<-svm_train
+RF_n<-length(names(RF_train))
+colnames(RF_train)<-gsub("-","_",colnames(RF_train),fixed = T)
+library(Boruta)
+
+boruta.train <- Boruta(cluster~., data = RF_train, doTrace = 2)
+print(boruta.train)
+plot(boruta.train, xlab = "", xaxt = "n")            
+lz<-lapply(1:ncol(boruta.train$ImpHistory),function(i)
+  
+  boruta.train$ImpHistory[is.finite(boruta.train$ImpHistory[,i]),i])
+names(lz) <- colnames(boruta.train$ImpHistory)
+Labels <- sort(sapply(lz,median))
+axis(side = 1,las=2,labels = names(Labels),at = 1:ncol(boruta.train$ImpHistory), cex.axis = 0.7)
+
+final.boruta <- TentativeRoughFix(boruta.train)   
+print(final.boruta)
+
+RFB_fea<-getSelectedAttributes(final.boruta, withTentative = F)  
+RFB_fea<-gsub("_","-",RFB_fea)
+boruta.df <- attStats(final.boruta)            
+class(boruta.df)
+print(boruta.df)
+
+
+###Xgboost
+library(Matrix)
+library(xgboost)
+xg_train<-svm_train
+xg_train$cluster=as.numeric(xg_train$cluster)
+xg_train$cluster=ifelse(xg_train$cluster=="1",0,1)
+xg_traindata1<-data.matrix(xg_train[,c(2:105)])
+xg_traindata2<-Matrix(xg_traindata1,sparse = T)
+xg_traindata3<-xg_train[,1]
+xg_traindata4<-list(data=xg_traindata2,label=xg_traindata3)
+xg_dtrain<-xgb.DMatrix(data = xg_traindata4$data, label = xg_traindata4$label)
+
+set.seed(2021201)
+xg_model<-xgboost(data=xg_dtrain,max_depth=6, eta=0.3, objective='binary:logistic', nround=25,
+                  subsample=0.8)
+xg_impor<-xgb.importance(names(xg_traindata4$data), model=xg_model)
+xgb.plot.importance(importance_matrix=xg_impor)
+xg_fea<-xg_impor$Feature
+
+Gass<-intersect(elastic_fea,intersect(RFB_fea,intersect(svm_fea,xg_fea)))
+
+###
+
+Gass<-intersect(Gass,intersect(rownames(gse30219.expr),intersect(rownames(gse72094.expr),rownames(gse50081.expr))))
+final_LR_train<-data.frame(tcga.train.sinfo[,"cluster"],
+                           scale(t(tcga.expr.train[Gass,rownames(tcga.train.sinfo)])))
+colnames(final_LR_train)[1]<-"cluster"
+final_LR_train$cluster=as.factor(ifelse(final_LR_train$cluster=="C2",1,0))
+
+final_model_LR <- glm(cluster ~ ., 
+                      data = final_LR_train, 
+                      family = "binomial")
+
+final_LR_test<-data.frame(tcga.test.sinfo[,"cluster"],
+                          scale(t(tcga.expr.test[Gass,rownames(tcga.test.sinfo)])))
+colnames(final_LR_test)[1]<-"cluster"
+final_pred_test<-data.frame(cluster=tcga.test.sinfo$cluster,prob=predict(final_model_LR,newdata = final_LR_test,
+                                                                       type = "response"))
+k_test<-final_pred_test
+k_test$prob<-as.numeric(ifelse(k_test$prob<0.5,0,1))
+k_test$cluster<-as.numeric(ifelse(k_test$cluster=="C1",0,1))
+final_roc_test<-roc(k_test$cluster,k_test$prob)
+
+
+gse50081<-read.csv("GSE50081.csv",header = T,row.names = 1)
+gse50081.sinfo<-read.table("gse50081_cli.txt",sep = "\t",header = T,row.names = 1)
+gse72094<-read.csv("GSE72094.csv",header = T,row.names = 1)
+gse72094.sinfo<-read.table("gse72094_cli.txt",sep = "\t",header = T,row.names = 1)
+gse30219.expr<-gse30219.expr[,gse30219.tumsam]
+gse31210.expr<-gse31210.expr[,gse31210.tumsam]
+gse50081.expr<-gse50081[,rownames(gse50081.sinfo)]
+gse72094.expr<-gse72094[,rownames(gse72094.sinfo)]
+
+
+
+
+final_LR_30219<-data.frame(scale(t(gse30219.expr[Gass,])))
+
+final_pred_30219<-data.frame(prob=predict(final_model_LR,newdata = final_LR_30219,
+                                                                       type = "response"))
+final_pred_30219$pred_cluster<-ifelse(final_pred_30219$prob<0.5,0,1)
+
+final_LR_31210<-data.frame(scale(t(gse31210.expr[Gass,])))
+
+final_pred_31210<-data.frame(prob=predict(final_model_LR,newdata = final_LR_31210,
+                                          type = "response"))
+final_pred_31210$pred_cluster<-ifelse(final_pred_31210$prob<0.5,0,1)
+
+final_LR_50081<-data.frame(scale(t(gse50081.expr[Gass,])))
+
+final_pred_50081<-data.frame(prob=predict(final_model_LR,newdata = final_LR_50081,
+                                          type = "response"))
+final_pred_50081$pred_cluster<-ifelse(final_pred_50081$prob<0.5,0,1)
+
+final_LR_72094<-data.frame(scale(t(gse72094.expr[Gass,])))
+
+final_pred_72094<-data.frame(prob=predict(final_model_LR,newdata = final_LR_72094,
+                                          type = "response"))
+final_pred_72094$pred_cluster<-ifelse(final_pred_72094$prob<0.5,0,1)
+
+cluster30219<-read.table("cluster30219.txt",sep = "\t",header = T,row.names = 1)
+cluster31210<-read.table("cluster31210.txt",sep = "\t",header = T,row.names = 1)
+cluster50081<-read.table("cluster50081.txt",sep = "\t",header = T,row.names = 1)
+cluster72094<-read.table("cluster72094.txt",sep = "\t",header = T,row.names = 1)
+
+cluster30219$cluster=ifelse(cluster30219$cluster=="1","C2","C1")
+cluster31210$cluster=ifelse(cluster31210$cluster=="1","C1","C2")
+cluster50081$cluster=ifelse(cluster50081$cluster=="1","C2","C1")
+cluster72094$cluster=ifelse(cluster72094$cluster=="1","C2","C1")
+
+final_pred_30219<-final_pred_30219[rownames(cluster30219),]
+final_pred_31210<-final_pred_31210[rownames(cluster31210),]
+final_pred_50081<-final_pred_50081[rownames(cluster50081),]
+final_pred_72094<-final_pred_72094[rownames(cluster72094),]
+
+
+k_30219<-data.frame(cluster=cluster30219$cluster,prob=final_pred_30219$prob,
+                    pred_cluster=final_pred_30219$pred_cluster,row.names = rownames(final_pred_30219))
+k_31210<-data.frame(cluster=cluster31210$cluster,prob=final_pred_31210$prob,
+                    pred_cluster=final_pred_31210$pred_cluster,row.names = rownames(final_pred_31210))
+k_50081<-data.frame(cluster=cluster50081$cluster,prob=final_pred_50081$prob,
+                    pred_cluster=final_pred_50081$pred_cluster,row.names = rownames(final_pred_50081))
+k_72094<-data.frame(cluster=cluster72094$cluster,prob=final_pred_72094$prob,
+                    pred_cluster=final_pred_72094$pred_cluster,row.names = rownames(final_pred_72094))
+
+table(k_30219$cluster,k_30219$pred_cluster)
+table(k_31210$cluster,k_31210$pred_cluster)
+table(k_50081$cluster,k_50081$pred_cluster)
+table(k_72094$cluster,k_72094$pred_cluster)
+
+
+
+k_30219$c<-as.numeric(ifelse(k_30219$cluster=="C1",0,1))
+final_roc_30219<-roc(k_30219$c,k_30219$pred_cluster)
+
+k_31210$c<-as.numeric(ifelse(k_31210$cluster=="C1",0,1))
+final_roc_31210<-roc(k_31210$c,k_31210$pred_cluster)
+
+k_50081$c<-as.numeric(ifelse(k_50081$cluster=="C1",0,1))
+final_roc_50081<-roc(k_50081$c,k_50081$pred_cluster)
+
+k_72094$c<-as.numeric(ifelse(k_72094$cluster=="C1",0,1))
+final_roc_72094<-roc(k_72094$c,k_72094$pred_cluster)
+
+##prepare submap  TCGA gse30219 gse31210 gse50081 gse72094
+##function
+generateInputFileForSubMap <- function(in_gct, gct_file, cls_file, sam_info, type_name = "type"){
+  in_gct <- data.frame(GeneID=rownames(in_gct),
+                       description="na",
+                       in_gct, 
+                       stringsAsFactors = F,
+                       check.names = F)
+  cat("#1.2\n", file = gct_file)
+  cat(nrow(in_gct),"\t",ncol(in_gct)-2,"\n", file = gct_file, append = T)
+  cat(paste(colnames(in_gct), collapse = "\t"),"\n", file = gct_file, append = T)
+  for(i in 1:nrow(in_gct)) cat(paste(in_gct[i,], collapse = "\t"),"\n", file = gct_file, append = T)
+  
+  cat(nrow(sam_info),length(levels(factor(sam_info$rank))),1, "\n", file = cls_file )
+  cat("#", paste0(levels(factor(sam_info[, type_name])), collapse = " " ), "\n", file = cls_file, sep = "", append = T)
+  cat(as.numeric(factor(sam_info[, type_name])), file = cls_file, append = T)
+}
+
+###
+skcm.immunotherapy.logNC <-early_luad_expr
+skcm.immunotherapy.logNC<-skcm.immunotherapy.logNC[which(apply(skcm.immunotherapy.logNC,1,
+                                                               function(x){return(sum(x>1))})>ncol(skcm.immunotherapy.logNC)*0.9),]
+rownames(skcm.immunotherapy.logNC) <- toupper(rownames(skcm.immunotherapy.logNC)) 
+skcm.immunotherapy.info <-ann
+skcm.immunotherapy.info <- skcm.immunotherapy.info[order(skcm.immunotherapy.info$cluster),]
+skcm.immunotherapy.info$rank <- rep(c(1,2),times=as.character(table(skcm.immunotherapy.info$cluster))) 
+##
+tc<-gse30219.expr
+tc=tc[which(apply(tc,1,function(x){return(sum(x>1))})>ncol(tc)*0.9),]
+GENELIST <- intersect(rownames(tc),rownames(skcm.immunotherapy.logNC)) 
+
+sam_info <- skcm.immunotherapy.info
+in_gct <- skcm.immunotherapy.logNC[GENELIST,rownames(skcm.immunotherapy.info)]
+
+gct_file <- "skcm.immunotherapy.for.SubMap_gse30219.gct"
+cls_file <- "skcm.immunotherapy.for.SubMap_gse30219.cls"
+generateInputFileForSubMap(in_gct = in_gct, gct_file = gct_file, cls_file = cls_file, sam_info = sam_info, type_name = "rank")
+
+##
+samples.C1 <- rownames(subset(cluster30219,cluster30219$cluster=="C1"))
+samples.C2 <- rownames(subset(cluster30219,cluster30219$cluster=="C2"))
+
+sam_info <- data.frame("mathcluster"=c(samples.C1,samples.C2),row.names = c(samples.C1,samples.C2))
+sam_info$rank <- rep(c(1,2),times=c(length(samples.C1),length(samples.C2)))
+##
+gct_file <- "gse30219.for.SubMap.gct"
+cls_file <- "gse30219.for.SubMap.cls"
+
+in_gct <-tc[GENELIST,rownames(sam_info)]
+generateInputFileForSubMap(in_gct = in_gct, gct_file = gct_file, cls_file = cls_file, 
+                           sam_info = sam_info, type_name = "rank")
+
+
+###
+skcm.immunotherapy.logNC <-early_luad_expr
+skcm.immunotherapy.logNC<-skcm.immunotherapy.logNC[which(apply(skcm.immunotherapy.logNC,1,
+                                                               function(x){return(sum(x>1))})>ncol(skcm.immunotherapy.logNC)*0.9),]
+rownames(skcm.immunotherapy.logNC) <- toupper(rownames(skcm.immunotherapy.logNC)) 
+skcm.immunotherapy.info <-ann
+skcm.immunotherapy.info <- skcm.immunotherapy.info[order(skcm.immunotherapy.info$cluster),]
+skcm.immunotherapy.info$rank <- rep(c(1,2),times=as.character(table(skcm.immunotherapy.info$cluster))) 
+##
+tc<-gse31210.expr
+tc=tc[which(apply(tc,1,function(x){return(sum(x>1))})>ncol(tc)*0.9),]
+GENELIST <- intersect(rownames(tc),rownames(skcm.immunotherapy.logNC)) 
+
+sam_info <- skcm.immunotherapy.info
+in_gct <- skcm.immunotherapy.logNC[GENELIST,rownames(skcm.immunotherapy.info)]
+##
+gct_file <- "skcm.immunotherapy.for.SubMap_gse31210.gct"
+cls_file <- "skcm.immunotherapy.for.SubMap_gse31210.cls"
+generateInputFileForSubMap(in_gct = in_gct, gct_file = gct_file, cls_file = cls_file, sam_info = sam_info, type_name = "rank")
+
+##
+samples.C1 <- rownames(subset(cluster31210,cluster31210$cluster=="C1"))
+samples.C2 <- rownames(subset(cluster31210,cluster31210$cluster=="C2"))
+
+sam_info <- data.frame("mathcluster"=c(samples.C1,samples.C2),row.names = c(samples.C1,samples.C2))
+sam_info$rank <- rep(c(1,2),times=c(length(samples.C1),length(samples.C2)))
+##
+gct_file <- "gse31210.for.SubMap.gct"
+cls_file <- "gse31210.for.SubMap.cls"
+
+in_gct <-tc[GENELIST,rownames(sam_info)]
+generateInputFileForSubMap(in_gct = in_gct, gct_file = gct_file, cls_file = cls_file, 
+                           sam_info = sam_info, type_name = "rank")
+
+##50081
+skcm.immunotherapy.logNC <-early_luad_expr
+skcm.immunotherapy.logNC<-skcm.immunotherapy.logNC[which(apply(skcm.immunotherapy.logNC,1,
+                                                               function(x){return(sum(x>1))})>ncol(skcm.immunotherapy.logNC)*0.9),]
+rownames(skcm.immunotherapy.logNC) <- toupper(rownames(skcm.immunotherapy.logNC)) 
+skcm.immunotherapy.info <-ann
+skcm.immunotherapy.info <- skcm.immunotherapy.info[order(skcm.immunotherapy.info$cluster),]
+skcm.immunotherapy.info$rank <- rep(c(1,2),times=as.character(table(skcm.immunotherapy.info$cluster))) 
+##
+tc<-gse50081.expr
+tc=tc[which(apply(tc,1,function(x){return(sum(x>1))})>ncol(tc)*0.9),]
+GENELIST <- intersect(rownames(tc),rownames(skcm.immunotherapy.logNC)) 
+
+sam_info <- skcm.immunotherapy.info
+in_gct <- skcm.immunotherapy.logNC[GENELIST,rownames(skcm.immunotherapy.info)]
+##
+gct_file <- "skcm.immunotherapy.for.SubMap_gse50081.gct"
+cls_file <- "skcm.immunotherapy.for.SubMap_gse50081.cls"
+generateInputFileForSubMap(in_gct = in_gct, gct_file = gct_file, cls_file = cls_file, sam_info = sam_info, type_name = "rank")
+
+##
+samples.C1 <- rownames(subset(cluster50081,cluster50081$cluster=="C1"))
+samples.C2 <- rownames(subset(cluster50081,cluster50081$cluster=="C2"))
+
+sam_info <- data.frame("mathcluster"=c(samples.C1,samples.C2),row.names = c(samples.C1,samples.C2))
+sam_info$rank <- rep(c(1,2),times=c(length(samples.C1),length(samples.C2)))
+##
+gct_file <- "gse50081.for.SubMap.gct"
+cls_file <- "gse50081.for.SubMap.cls"
+
+in_gct <-tc[GENELIST,rownames(sam_info)]
+generateInputFileForSubMap(in_gct = in_gct, gct_file = gct_file, cls_file = cls_file, 
+                           sam_info = sam_info, type_name = "rank")
+
+
+##72094
+skcm.immunotherapy.logNC <-early_luad_expr
+skcm.immunotherapy.logNC<-skcm.immunotherapy.logNC[which(apply(skcm.immunotherapy.logNC,1,
+                                                               function(x){return(sum(x>1))})>ncol(skcm.immunotherapy.logNC)*0.9),]
+rownames(skcm.immunotherapy.logNC) <- toupper(rownames(skcm.immunotherapy.logNC)) 
+skcm.immunotherapy.info <-ann
+skcm.immunotherapy.info <- skcm.immunotherapy.info[order(skcm.immunotherapy.info$cluster),]
+skcm.immunotherapy.info$rank <- rep(c(1,2),times=as.character(table(skcm.immunotherapy.info$cluster))) 
+##
+tc<-gse72094.expr
+tc=tc[which(apply(tc,1,function(x){return(sum(x>1))})>ncol(tc)*0.9),]
+GENELIST <- intersect(rownames(tc),rownames(skcm.immunotherapy.logNC)) 
+
+sam_info <- skcm.immunotherapy.info
+in_gct <- skcm.immunotherapy.logNC[GENELIST,rownames(skcm.immunotherapy.info)]
+##
+gct_file <- "skcm.immunotherapy.for.SubMap_gse72094.gct"
+cls_file <- "skcm.immunotherapy.for.SubMap_gse72094.cls"
+generateInputFileForSubMap(in_gct = in_gct, gct_file = gct_file, cls_file = cls_file, sam_info = sam_info, type_name = "rank")
+
+##
+samples.C1 <- rownames(subset(cluster72094,cluster72094$cluster=="C1"))
+samples.C2 <- rownames(subset(cluster72094,cluster72094$cluster=="C2"))
+
+sam_info <- data.frame("mathcluster"=c(samples.C1,samples.C2),row.names = c(samples.C1,samples.C2))
+sam_info$rank <- rep(c(1,2),times=c(length(samples.C1),length(samples.C2)))
+##
+gct_file <- "gse72094.for.SubMap.gct"
+cls_file <- "gse72094.for.SubMap.cls"
+
+in_gct <-tc[GENELIST,rownames(sam_info)]
+generateInputFileForSubMap(in_gct = in_gct, gct_file = gct_file, cls_file = cls_file, 
+                           sam_info = sam_info, type_name = "rank")
+
+
+###submap result
+library(pheatmap)
+Sys.setenv(LANGUAGE = "en") 
+options(stringsAsFactors = FALSE)
+heatmap.YlGnPe <- c("#440259","#345F8C","#228C8A","#78CE51","#FAE71F")
+cherry    <- "#700353"
+lightgrey <- "#dcddde"
+#gse30219
+tmper <- matrix(c(0.001,1,1,0.001,0.004,1,1,0.004), 
+              nrow = 4,byrow = T,dimnames = list(c("GSE30219_C1_p","GSE30219_C2_p","GSE30219_C1_b","GSE30219_C2_b"),
+                                                 c("TCGA_C1","TCGA_C2")))
+pheatmap(tmper, cellwidth = 30, cellheight = 30,
+         cluster_rows = F,cluster_cols = F,
+         color = heatmap.YlGnPe[5:1],
+         gaps_row = 2,
+         annotation_row = data.frame(pvalue=c("Nominal p value","Nominal p value","Bonferroni corrected","Bonferroni corrected"),row.names = rownames(tmper)),
+         annotation_colors = list(pvalue=c("Nominal p value"=lightgrey,"Bonferroni corrected"=cherry)),
+         filename = "GSE30219_heatmap_submap.pdf")
+
+#gse31210
+tmper <- matrix(c(0.001,1,1,0.001,0.004,1,1,0.004), 
+                nrow = 4,byrow = T,dimnames = list(c("GSE31210_C1_p","GSE31210_C2_p","GSE31210_C1_b","GSE31210_C2_b"),
+                                                   c("TCGA_C1","TCGA_C2")))
+pheatmap(tmper, cellwidth = 30, cellheight = 30,
+         cluster_rows = F,cluster_cols = F,
+         color = heatmap.YlGnPe[5:1],
+         gaps_row = 2,
+         annotation_row = data.frame(pvalue=c("Nominal p value","Nominal p value","Bonferroni corrected","Bonferroni corrected"),row.names = rownames(tmper)),
+         annotation_colors = list(pvalue=c("Nominal p value"=lightgrey,"Bonferroni corrected"=cherry)),
+         filename = "GSE31210_heatmap_submap.pdf")
+#gse50081
+tmper <- matrix(c(0.001,1,1,0.001,0.004,1,1,0.004), 
+                nrow = 4,byrow = T,dimnames = list(c("GSE50081_C1_p","GSE50081_C2_p","GSE50081_C1_b","GSE50081_C2_b"),
+                                                   c("TCGA_C1","TCGA_C2")))
+pheatmap(tmper, cellwidth = 30, cellheight = 30,
+         cluster_rows = F,cluster_cols = F,
+         color = heatmap.YlGnPe[5:1],
+         gaps_row = 2,
+         annotation_row = data.frame(pvalue=c("Nominal p value","Nominal p value","Bonferroni corrected","Bonferroni corrected"),row.names = rownames(tmper)),
+         annotation_colors = list(pvalue=c("Nominal p value"=lightgrey,"Bonferroni corrected"=cherry)),
+         filename = "GSE50081_heatmap_submap.pdf")
+#gse72094
+tmper <- matrix(c(0.001,1,1,0.001,0.004,1,1,0.004), 
+                nrow = 4,byrow = T,dimnames = list(c("GSE72094_C1_p","GSE72094_C2_p","GSE72094_C1_b","GSE72094_C2_b"),
+                                                   c("TCGA_C1","TCGA_C2")))
+pheatmap(tmper, cellwidth = 30, cellheight = 30,
+         cluster_rows = F,cluster_cols = F,
+         color = heatmap.YlGnPe[5:1],
+         gaps_row = 2,
+         annotation_row = data.frame(pvalue=c("Nominal p value","Nominal p value","Bonferroni corrected","Bonferroni corrected"),row.names = rownames(tmper)),
+         annotation_colors = list(pvalue=c("Nominal p value"=lightgrey,"Bonferroni corrected"=cherry)),
+         filename = "GSE72094_heatmap_submap.pdf")
+
+
+
+                                  #####PART3#####
+library(TCGAmutations)
+library(maftools)
+library(TCGAbiolinks)
+
+library(dplyr)
+library(stringr)
+library(rtracklayer)
+library(SummarizedExperiment)
+library(clusterProfiler)
+library(RColorBrewer)
+library(maftools)
+library(circlize)
+
+library(matrixStats)
+library(GetoptLong)
+library(GenomicRanges)
+
+luad<-tcga_load(study = "luad")
+cluster_C1<-subset(ann,ann$cluster=="C1")
+cluster_C2<-subset(ann,ann$cluster=="C2")
+cluster_C1$sample<-rownames(cluster_C1)
+cluster_C2$sample<-rownames(cluster_C2)
+##luad@data$Tumor_Sample_Barcode<-substr(luad@data$Tumor_Sample_Barcode,start = 1,stop = 16)
+##luad@clinical.data$Tumor_Sample_Barcode<-substr(luad@clinical.data$Tumor_Sample_Barcode,start = 1,stop = 16)
+corres<-luad@data[,c("Hugo_Symbol","Tumor_Sample_Barcode")]
+corres$sample<-substr(corres$Tumor_Sample_Barcode,start = 1,stop = 16)
+C1_tsb<-merge(corres,cluster_C1,by="sample")
+C2_tsb<-merge(corres,cluster_C2,by="sample")
+c1_name<-unique(C1_tsb$Tumor_Sample_Barcode)
+c2_name<-unique(C2_tsb$Tumor_Sample_Barcode)
+
+early_luad_C1<-subsetMaf(maf = luad,tsb = c1_name,isTCGA = FALSE,mafObj = TRUE)       
+early_luad_C2<-subsetMaf(maf = luad,tsb = c2_name,isTCGA = FALSE,mafObj = TRUE)
+fvsm <- mafCompare(m1=early_luad_C1, m2=early_luad_C2, m1Name="C1", m2Name="C2", minMut=5)
+
+
+###TMB
+nonsilentmutation <- c("Frame_Shift_Del", "Frame_Shift_Ins", "Missense_Mutation", "Nonsense_Mutation", "Splice_Site", "In_Frame_Del", "In_Frame_Ins", "Translation_Start_Site", "Nonstop_Mutation") #Splice_Region是ncRNA-splicing
+crcmut<-luad@data
+#all(colnames(luadmut) == colnames(luscmut)) 
+#crcmut <- rbind(luadmut, luscmut) 
+crcmut <- data.frame(sample = str_sub(crcmut$Tumor_Sample_Barcode, 1, 16), crcmut)
+crcmut <- crcmut[crcmut$Variant_Classification %in% nonsilentmutation, ]
+x<-table(crcmut$sample)
+x=as.data.frame(x)
+x$tmb=x$Freq/38
+rownames(x)<-x$Var1
+cosam<-intersect(rownames(ann),rownames(x))
+tmb<-cbind(x[cosam,],ann[cosam,])
+
+
+library(ggplot2)
+library(ggpubr)
+
+p <- wilcox.test(tmb[which(tmb$cluster == "C1"),"tmb"],
+                 tmb[which(tmb$cluster == "C2"),"tmb"])$p.value
+jco <- c("#2874C5","#EABF00")
+
+ggplot(data = tmb,aes(x = cluster, y = tmb, fill = cluster))+
+  scale_fill_manual(values = jco[2:1]) + 
+  geom_violin(alpha=0.4, position = position_dodge(width = .75),
+              size=0.8, color="black") + 
+  geom_boxplot(notch = TRUE, outlier.size = -1, 
+               color="black", lwd=0.8, alpha = 0.7)+ 
+  geom_point(shape = 21, size=2, 
+             position = position_jitterdodge(), 
+             color="black", alpha=1)+ 
+  theme_classic() +
+  ylab(expression("TMB")) +
+  xlab("")  +
+  annotate(geom="text", cex=6,
+           x=1.5, y=50, 
+           label=paste0("P ", ifelse(p<0.001, "< 0.001", paste0("= ",round(p,3)))), 
+           color="black") + 
+  theme(#panel.border = element_rect(colour = "black", fill=NA, size=0.2), 
+    axis.ticks = element_line(size=0.2,color="black"),
+    axis.ticks.length = unit(0.2,"cm"),
+    legend.position = "none",
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10))
+
+###waterfall
+pdf("C1_onco.pdf",width = 10,height = 8)
+oncoplot(maf=early_luad_C1, top=20)
+dev.off()
+pdf("C2_onco.pdf",width = 10,height = 8)
+oncoplot(maf=early_luad_C2, top=20)
+dev.off()
+
+##waterfall
+genes<-c("EGFR","ALK","ROS1","RET","MET","BRAF","KRAS","PIK3CA","NRG1")
+coOncoplot(m1=early_luad_C1, m2=early_luad_C2, m1Name="C1", m2Name="C2", genes=genes)
+
+##enrich MATHcluster C1 C2
+c1d<-as.character(c1_name)
+c2d<-as.character(c2_name)
+c1d<-data.frame(Tumor_Sample_Barcode=c1d,cluster="C1")
+c2d<-data.frame(Tumor_Sample_Barcode=c2d,cluster="C2")
+cd<-rbind(c1d,c2d)
+luad@clinical.data<-merge(luad@clinical.data,cd,by="Tumor_Sample_Barcode")
+clin_enrich <- clinicalEnrichment(maf=luad, clinicalFeature="cluster")
+plotEnrichmentResults(enrich_res=clin_enrich, pVal=0.0001)
+
+###C1 lollipopplot
+C11<-lollipopPlot(maf=early_luad_C1, gene="EGFR", AACol="HGVSp_Short", showMutationRate=TRUE)
+C12<-lollipopPlot(maf=early_luad_C1, gene="ALK", AACol="HGVSp_Short", showMutationRate=TRUE)
+C13<-lollipopPlot(maf=early_luad_C1, gene="ROS1", AACol="HGVSp_Short", showMutationRate=TRUE)
+C14<-lollipopPlot(maf=early_luad_C1, gene="RET", AACol="HGVSp_Short", showMutationRate=TRUE)
+C15<-lollipopPlot(maf=early_luad_C1, gene="MET", AACol="HGVSp_Short", showMutationRate=TRUE)
+C16<-lollipopPlot(maf=early_luad_C1, gene="BRAF", AACol="HGVSp_Short", showMutationRate=TRUE)
+C17<-lollipopPlot(maf=early_luad_C1, gene="KRAS", AACol="HGVSp_Short", showMutationRate=TRUE)
+C18<-lollipopPlot(maf=early_luad_C1, gene="PIK3CA", AACol="HGVSp_Short", showMutationRate=TRUE)
+C19<-lollipopPlot(maf=early_luad_C1, gene="NRG1", AACol="HGVSp_Short", showMutationRate=TRUE)
+C110<-lollipopPlot(maf=early_luad_C1, gene="TTN", AACol="HGVSp_Short", showMutationRate=TRUE)
+C111<-lollipopPlot(maf=early_luad_C1, gene="PTPRB", AACol="HGVSp_Short", showMutationRate=TRUE)
+C112<-lollipopPlot(maf=early_luad_C1, gene="FMN2", AACol="HGVSp_Short", showMutationRate=TRUE)
+C113<-lollipopPlot(maf=early_luad_C1, gene="TP53", AACol="HGVSp_Short", showMutationRate=TRUE)
+C114<-lollipopPlot(maf=early_luad_C1, gene="KCNB2", AACol="HGVSp_Short", showMutationRate=TRUE)
+C115<-lollipopPlot(maf=early_luad_C1, gene="RYR3", AACol="HGVSp_Short", showMutationRate=TRUE)
+C116<-lollipopPlot(maf=early_luad_C1, gene="CSMD3", AACol="HGVSp_Short", showMutationRate=TRUE)
+C117<-lollipopPlot(maf=early_luad_C1, gene="SORCS1", AACol="HGVSp_Short", showMutationRate=TRUE)
+C118<-lollipopPlot(maf=early_luad_C1, gene="PROX1", AACol="HGVSp_Short", showMutationRate=TRUE)
+C119<-lollipopPlot(maf=early_luad_C1, gene="NELL1", AACol="HGVSp_Short", showMutationRate=TRUE)
+C120<-lollipopPlot(maf=early_luad_C1, gene="RYR2", AACol="HGVSp_Short", showMutationRate=TRUE)
+
+C1_lolli<-plot_grid(C11,C12,C13,C14,C15,C16,C17,C18,C19,C110,C111,C112,C113,C114,C115,C116,C117,
+                    C118,C119,C120,nrow = 5,ncol = 4)
+
+#C2
+C21<-lollipopPlot(maf=early_luad_C2, gene="EGFR", AACol="HGVSp_Short", showMutationRate=TRUE)
+C22<-lollipopPlot(maf=early_luad_C2, gene="ALK", AACol="HGVSp_Short", showMutationRate=TRUE)
+C23<-lollipopPlot(maf=early_luad_C2, gene="ROS1", AACol="HGVSp_Short", showMutationRate=TRUE)
+C24<-lollipopPlot(maf=early_luad_C2, gene="RET", AACol="HGVSp_Short", showMutationRate=TRUE)
+C25<-lollipopPlot(maf=early_luad_C2, gene="MET", AACol="HGVSp_Short", showMutationRate=TRUE)
+C26<-lollipopPlot(maf=early_luad_C2, gene="BRAF", AACol="HGVSp_Short", showMutationRate=TRUE)
+C27<-lollipopPlot(maf=early_luad_C2, gene="KRAS", AACol="HGVSp_Short", showMutationRate=TRUE)
+C28<-lollipopPlot(maf=early_luad_C2, gene="PIK3CA", AACol="HGVSp_Short", showMutationRate=TRUE)
+C29<-lollipopPlot(maf=early_luad_C2, gene="NRG1", AACol="HGVSp_Short", showMutationRate=TRUE)
+C210<-lollipopPlot(maf=early_luad_C2, gene="TTN", AACol="HGVSp_Short", showMutationRate=TRUE)
+C211<-lollipopPlot(maf=early_luad_C2, gene="PTPRB", AACol="HGVSp_Short", showMutationRate=TRUE)
+C212<-lollipopPlot(maf=early_luad_C2, gene="FMN2", AACol="HGVSp_Short", showMutationRate=TRUE)
+C213<-lollipopPlot(maf=early_luad_C2, gene="TP53", AACol="HGVSp_Short", showMutationRate=TRUE)
+C214<-lollipopPlot(maf=early_luad_C2, gene="KCNB2", AACol="HGVSp_Short", showMutationRate=TRUE)
+C215<-lollipopPlot(maf=early_luad_C2, gene="RYR3", AACol="HGVSp_Short", showMutationRate=TRUE)
+C216<-lollipopPlot(maf=early_luad_C2, gene="CSMD3", AACol="HGVSp_Short", showMutationRate=TRUE)
+C217<-lollipopPlot(maf=early_luad_C2, gene="SORCS1", AACol="HGVSp_Short", showMutationRate=TRUE)
+C218<-lollipopPlot(maf=early_luad_C2, gene="PROX1", AACol="HGVSp_Short", showMutationRate=TRUE)
+C219<-lollipopPlot(maf=early_luad_C2, gene="NELL1", AACol="HGVSp_Short", showMutationRate=TRUE)
+C220<-lollipopPlot(maf=early_luad_C2, gene="RYR2", AACol="HGVSp_Short", showMutationRate=TRUE)
+
+C2_lolli<-plot_grid(C21,C22,C23,C24,C25,C26,C27,C28,C29,C210,C211,C212,C213,C214,C215,C216,C217,
+                    C218,C219,C220,nrow = 5,ncol = 4)
+
+
+
+##
+targetMut <- c("EGFR", "ALK", "ROS1", "RET", "MET", "BRAF", "KRAS", "PIK3CA", "NRG1", "TTN",
+               "PTPRB", "FMN2", "TP53", "KCNB2", "RYR3", "CSMD3", "SORCS1", "PROX1", "NELL1", "RYR2")
+crc_mut_gene <- crcmut[crcmut$Hugo_Symbol %in% targetMut,]
+all_mutSample<-unique(crcmut$sample)
+
+
+EGFRmutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "EGFR", "sample"])
+EGFRwildSample <- setdiff(all_mutSample, EGFRmutSample)
+
+ALKmutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "ALK", "sample"])
+ALKwildSample <- setdiff(all_mutSample, ALKmutSample)
+
+BRAFmutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "BRAF", "sample"])
+BRAFwildSample <- setdiff(all_mutSample, BRAFmutSample)
+
+CSMD3mutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "CSMD3", "sample"])
+CSMD3wildSample <- setdiff(all_mutSample, CSMD3mutSample)
+
+FMN2mutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "FMN2", "sample"])
+FMN2wildSample <- setdiff(all_mutSample, FMN2mutSample)
+
+KCNB2mutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "KCNB2", "sample"])
+KCNB2wildSample <- setdiff(all_mutSample, KCNB2mutSample)
+
+KRASmutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "KRAS", "sample"])
+KRASwildSample <- setdiff(all_mutSample, KRASmutSample)
+
+METmutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "MET", "sample"])
+METwildSample <- setdiff(all_mutSample, METmutSample)
+
+NELL1mutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "NELL1", "sample"])
+NELL1wildSample <- setdiff(all_mutSample, NELL1mutSample)
+
+NRG1mutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "NRG1", "sample"])
+NRG1wildSample <- setdiff(all_mutSample, NRG1mutSample)
+
+PIK3CAmutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "PIK3CA", "sample"])
+PIK3CAwildSample <- setdiff(all_mutSample, PIK3CAmutSample)
+
+PROX1mutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "PROX1", "sample"])
+PROX1wildSample <- setdiff(all_mutSample, PROX1mutSample)
+
+PTPRBmutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "PTPRB", "sample"])
+PTPRBwildSample <- setdiff(all_mutSample, PTPRBmutSample)
+
+RETmutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "RET", "sample"])
+RETwildSample <- setdiff(all_mutSample, RETmutSample)
+
+ROS1mutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "ROS1", "sample"])
+ROS1wildSample <- setdiff(all_mutSample, ROS1mutSample)
+
+RYR2mutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "RYR2", "sample"])
+RYR2wildSample <- setdiff(all_mutSample, RYR2mutSample)
+
+RYR3mutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "RYR3", "sample"])
+RYR3wildSample <- setdiff(all_mutSample, RYR3mutSample)
+
+SORCS1mutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "SORCS1", "sample"])
+SORCS1wildSample <- setdiff(all_mutSample, SORCS1mutSample)
+
+TP53mutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "TP53", "sample"])
+TP53wildSample <- setdiff(all_mutSample, TP53mutSample)
+
+TTNmutSample <- unique(crc_mut_gene[crc_mut_gene$Hugo_Symbol == "TTN", "sample"])
+TTNwildSample <- setdiff(all_mutSample, TTNmutSample)
+
+#dataframe
+annn<-ann
+annn$bcr_patient_barcode<-rownames(annn)
+annn[annn$bcr_patient_barcode %in% EGFRmutSample, "EGFRmut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% EGFRwildSample, "EGFRmut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% ALKmutSample, "ALKmut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% ALKwildSample, "ALKmut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% BRAFmutSample, "BRAFmut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% BRAFwildSample, "BRAFmut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% CSMD3mutSample, "CSMD3mut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% CSMD3wildSample, "CSMD3mut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% FMN2mutSample, "FMN2mut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% FMN2wildSample, "FMN2mut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% KCNB2mutSample, "KCNB2mut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% KCNB2wildSample, "KCNB2mut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% KRASmutSample, "KRASmut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% KRASwildSample, "KRASmut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% METmutSample, "METmut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% METwildSample, "METmut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% NELL1mutSample, "NELL1mut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% NELL1wildSample, "NELL1mut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% NRG1mutSample, "NRG1mut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% NRG1wildSample, "NRG1mut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% PIK3CAmutSample, "PIK3CAmut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% PIK3CAwildSample, "PIK3CAmut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% PROX1mutSample, "PROX1mut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% PROX1wildSample, "PROX1mut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% PTPRBmutSample, "PTPRBmut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% PTPRBwildSample, "PTPRBmut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% RETmutSample, "RETmut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% RETwildSample, "RETmut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% ROS1mutSample, "ROS1mut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% ROS1wildSample, "ROS1mut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% RYR2mutSample, "RYR2mut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% RYR2wildSample, "RYR2mut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% RYR3mutSample, "RYR3mut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% RYR3wildSample, "RYR3mut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% SORCS1mutSample, "SORCS1mut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% SORCS1wildSample, "SORCS1mut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% TP53mutSample, "TP53mut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% TP53wildSample, "TP53mut"] <- "wildtype"
+
+annn[annn$bcr_patient_barcode %in% TTNmutSample, "TTNmut"] <- "mutant"
+annn[annn$bcr_patient_barcode %in% TTNwildSample, "TTNmut"] <- "wildtype"
+
+##
+library(ggplot2)
+p1<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=EGFRmut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))#darkblue <- "#0772B9" lightblue <- "#48C8EF"
+
+p2<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=ALKmut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p3<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=BRAFmut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p4<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=CSMD3mut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p5<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=FMN2mut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p6<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=KCNB2mut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p7<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=KRASmut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p8<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=METmut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p9<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=NELL1mut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p10<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=NRG1mut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p11<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=TTNmut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p12<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=PIK3CAmut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p13<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=PROX1mut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p14<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=PTPRBmut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p15<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=RETmut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p16<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=ROS1mut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p17<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=RYR2mut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p18<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=RYR3mut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p19<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=SORCS1mut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+p20<-ggplot(annn, aes(cluster)) + geom_bar(aes(fill=TP53mut), position="fill",colour="black")+
+  scale_fill_manual(values = c("#0772B9","#48C8EF"))    +theme_classic()+theme(axis.ticks.length=unit(0.5,'cm'))+
+  theme(text=element_text(size=16,  family="serif"))
+
+
+
+plot_grid(p1,p2,p3,p4,p5,p6,p7,p8,p9,p10,p11,p12,p13,p14,p15,p16,p17,p18,p19,p20,nrow = 5,ncol = 4)
+
+
+table(subset(annn,annn$cluster=="C1")$RYR2mut)
+table(subset(annn,annn$cluster=="C2")$RYR2mut)
+
+
+
+##以focal input
+tumor.seg.cnv <- read.table("focal_input.seg.txt", sep="\t", header=T, stringsAsFactors=F)
+tumor.seg.cnv$Sample <- gsub("-[0-9A-Z]*-[0-9A-Z]*-01$", "", tumor.seg.cnv$Sample)
+c1_id<-rownames(subset(ann,ann$cluster=="C1"))
+c2_id<-rownames(subset(ann,ann$cluster=="C2"))
+
+c1_seg.cnv<-tumor.seg.cnv[tumor.seg.cnv$Sample %in% c1_id,]
+c2_seg.cnv<-tumor.seg.cnv[tumor.seg.cnv$Sample %in% c2_id,]
+
+write.table(c1_seg.cnv,"c1_seg.cnv.txt",sep = "\t",quote = F,row.names = F)
+write.table(c2_seg.cnv,"c2_seg.cnv.txt",sep = "\t",quote = F,row.names = F)
+## c1_seg.cnv  c2_seg.cnv for Gistic2.0 input
+##Gistic 2.0 output bakc to R
+library(cowplot)
+library(ggplot2)
+library(ggpubr)
+library(tidyverse)
+
+#
+focalload1 <- read.table("C1_focal_data_by_genes.txt", header = T, sep = "\t", check.names = F)
+rownames(focalload1) <- focalload1$Gene.Symbol
+
+broadload1 <- read.table("C1_broad_data_by_genes.txt", header = T, sep = "\t", check.names = F)
+rownames(broadload1) <- broadload1$Gene.Symbol
+
+
+#
+focalload2 <- read.table("C2_focal_data_by_genes.txt", header = T, sep = "\t", check.names = F)
+rownames(focalload2) <- focalload2$Gene.Symbol
+
+broadload2 <- read.table("C2_broad_data_by_genes.txt", header = T, sep = "\t", check.names = F)
+rownames(broadload2) <- broadload2$Gene.Symbol
+
+##
+##C1
+focalload1<-focalload1[,-c(1:3)]
+focalgainload1 <- focalload1
+focallossload1 <- focalload1
+
+focalgainload1[focalgainload1 > 0]  <- 1
+focalgainload1[focalgainload1 < 0]  <- 0
+focalgainload1 <- data.frame(colSums(focalgainload1))
+colnames(focalgainload1) <- "focal_gain_load1"
+
+focallossload1[focallossload1 > 0]  <- 0
+focallossload1[focallossload1 < 0]  <- 1
+focallossload1 <- data.frame(colSums(focallossload1))
+colnames(focallossload1) <- "focal_loss_load1"
+
+broadload1 <- broadload1[, -c(1:3)]
+broadload_gain1 <- broadload1
+broadload_loss1 <- broadload1
+
+broadload_gain1[broadload_gain1 > 0] <- 1
+broadload_gain1[broadload_gain1 < 0] <- 0
+broadload_gain1 <- data.frame(colSums(broadload_gain1))
+colnames(broadload_gain1) <- "broad_gain_load1"
+
+broadload_loss1[broadload_loss1 > 0] <- 0
+broadload_loss1[broadload_loss1 < 0] <- 1
+broadload_loss1 <- data.frame(colSums(broadload_loss1))
+colnames(broadload_loss1) <- "broad_loss_load1"
+
+##C2
+focalload2<-focalload2[,-c(1:3)]
+focalgainload2 <- focalload2
+focallossload2 <- focalload2
+
+focalgainload2[focalgainload2 > 0]  <- 1
+focalgainload2[focalgainload2 < 0]  <- 0
+focalgainload2 <- data.frame(colSums(focalgainload2))
+colnames(focalgainload2) <- "focal_gain_load2"
+
+focallossload2[focallossload2 > 0]  <- 0
+focallossload2[focallossload2 < 0]  <- 1
+focallossload2 <- data.frame(colSums(focallossload2))
+colnames(focallossload2) <- "focal_loss_load2"
+
+broadload2 <- broadload2[, -c(1:3)]
+broadload_gain2 <- broadload2
+broadload_loss2 <- broadload2
+
+broadload_gain2[broadload_gain2 > 0] <- 1
+broadload_gain2[broadload_gain2 < 0] <- 0
+broadload_gain2 <- data.frame(colSums(broadload_gain2))
+colnames(broadload_gain2) <- "broad_gain_load2"
+
+broadload_loss2[broadload_loss2 > 0] <- 0
+broadload_loss2[broadload_loss2 < 0] <- 1
+broadload_loss2 <- data.frame(colSums(broadload_loss2))
+colnames(broadload_loss2) <- "broad_loss_load2"
+
+#combine
+c1_barcode<-intersect(rownames(focalgainload1),intersect(rownames(focallossload1),
+                                                         intersect(rownames(broadload_gain1),rownames(broadload_loss1))))
+c2_barcode<-intersect(rownames(focalgainload2),intersect(rownames(focallossload2),
+                                                         intersect(rownames(broadload_gain2),rownames(broadload_loss2))))
+copyload1<-data.frame(focalgainload=focalgainload1[c1_barcode,"focal_gain_load1"],
+                      focallossload=focallossload1[c1_barcode,"focal_loss_load1"],
+                      broadload_gain =broadload_gain1[c1_barcode,"broad_gain_load1"],
+                      broadload_loss= broadload_loss1[c1_barcode,"broad_loss_load1"],row.names = c1_barcode)
+copyload2<-data.frame(focalgainload=focalgainload2[c2_barcode,"focal_gain_load2"],
+                      focallossload=focallossload2[c2_barcode,"focal_loss_load2"],
+                      broadload_gain =broadload_gain2[c2_barcode,"broad_gain_load2"],
+                      broadload_loss= broadload_loss2[c2_barcode,"broad_loss_load2"],row.names = c2_barcode)
+copyload1$cluster="C1"
+copyload2$cluster="C2"
+copyload<-rbind(copyload1,copyload2)
+
+#
+jco <- c("#2874C5","#EABF00")
+
+p<- wilcox.test(copyload[which(copyload$cluster == "C1"),"focalgainload"],
+                 copyload[which(copyload$cluster == "C2"),"focalgainload"])$p.value
+g1<-ggplot(data = copyload,aes(x = cluster, y = focalgainload, fill = cluster))+
+  scale_fill_manual(values = jco[2:1]) + 
+  geom_violin(alpha=0.4, position = position_dodge(width = .75),
+              size=0.8, color="black") + 
+  geom_boxplot(notch = TRUE, outlier.size = -1, 
+               color="black", lwd=0.8, alpha = 0.7)+ 
+  geom_point(shape = 21, size=2, 
+             position = position_jitterdodge(), 
+             color="black", alpha=1)+ 
+  theme_classic() +
+  ylab(expression("Burden of Copy Number Gain")) +
+  xlab("Focal")  +
+  annotate(geom="text", cex=6,
+           x=1.5, y=3000, 
+           label=paste0("P ", ifelse(p<0.001, "< 0.001", paste0("= ",round(p,3)))), 
+           color="black") + 
+  theme(#panel.border = element_rect(colour = "black", fill=NA, size=0.2), 
+    axis.ticks = element_line(size=0.2,color="black"),
+    axis.ticks.length = unit(0.2,"cm"),
+    legend.position = "none",
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10))
+
+p<- wilcox.test(copyload[which(copyload$cluster == "C1"),"focallossload"],
+                copyload[which(copyload$cluster == "C2"),"focallossload"])$p.value
+g2<-ggplot(data = copyload,aes(x = cluster, y = focallossload, fill = cluster))+
+  scale_fill_manual(values = jco[2:1]) + 
+  geom_violin(alpha=0.4, position = position_dodge(width = .75),
+              size=0.8, color="black") + 
+  geom_boxplot(notch = TRUE, outlier.size = -1, 
+               color="black", lwd=0.8, alpha = 0.7)+ 
+  geom_point(shape = 21, size=2, 
+             position = position_jitterdodge(), 
+             color="black", alpha=1)+ 
+  theme_classic() +
+  ylab(expression("Burden of Copy Number Loss")) +
+  xlab("Focal")  +
+  annotate(geom="text", cex=6,
+           x=1.5, y=3000, 
+           label=paste0("P ", ifelse(p<0.001, "< 0.001", paste0("= ",round(p,3)))), 
+           color="black") + 
+  theme(#panel.border = element_rect(colour = "black", fill=NA, size=0.2), 
+    axis.ticks = element_line(size=0.2,color="black"),
+    axis.ticks.length = unit(0.2,"cm"),
+    legend.position = "none",
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10))
+
+p<- wilcox.test(copyload[which(copyload$cluster == "C1"),"broadload_gain"],
+                copyload[which(copyload$cluster == "C2"),"broadload_gain"])$p.value
+g3<-ggplot(data = copyload,aes(x = cluster, y = broadload_gain, fill = cluster))+
+  scale_fill_manual(values = jco[2:1]) + 
+  geom_violin(alpha=0.4, position = position_dodge(width = .75),
+              size=0.8, color="black") + 
+  geom_boxplot(notch = TRUE, outlier.size = -1, 
+               color="black", lwd=0.8, alpha = 0.7)+ 
+  geom_point(shape = 21, size=2, 
+             position = position_jitterdodge(), 
+             color="black", alpha=1)+ 
+  theme_classic() +
+  ylab(expression("Burden of Copy Number Gain")) +
+  xlab("Arm-level")  +
+  annotate(geom="text", cex=6,
+           x=1.5, y=2000, 
+           label=paste0("P ", ifelse(p<0.001, "< 0.001", paste0("= ",round(p,3)))), 
+           color="black") + 
+  theme(#panel.border = element_rect(colour = "black", fill=NA, size=0.2),
+    axis.ticks = element_line(size=0.2,color="black"),
+    axis.ticks.length = unit(0.2,"cm"),
+    legend.position = "none",
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10))
+
+p<- wilcox.test(copyload[which(copyload$cluster == "C1"),"broadload_loss"],
+                copyload[which(copyload$cluster == "C2"),"broadload_loss"])$p.value
+g4<-ggplot(data = copyload,aes(x = cluster, y = broadload_loss, fill = cluster))+
+  scale_fill_manual(values = jco[2:1]) + 
+  geom_violin(alpha=0.4, position = position_dodge(width = .75),
+              size=0.8, color="black") + 
+  geom_boxplot(notch = TRUE, outlier.size = -1, 
+               color="black", lwd=0.8, alpha = 0.7)+ 
+  geom_point(shape = 21, size=2, 
+             position = position_jitterdodge(), 
+             color="black", alpha=1)+ 
+  theme_classic() +
+  ylab(expression("Burden of Copy Number Loss")) +
+  xlab("Arm-level")  +
+  annotate(geom="text", cex=6,
+           x=1.5, y=2000, 
+           label=paste0("P ", ifelse(p<0.001, "< 0.001", paste0("= ",round(p,3)))), 
+           color="black") + 
+  theme(#panel.border = element_rect(colour = "black", fill=NA, size=0.2), 
+    axis.ticks = element_line(size=0.2,color="black"),
+    axis.ticks.length = unit(0.2,"cm"),
+    legend.position = "none",
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10))
+
+pp<-plot_grid(g1,g2,g3,g4,nrow = 2,ncol = 2)
+
+                           
+
+                                       ######PART 4#########
+library(tidyverse)
+library(ISOpureR) 
+library(impute) 
+library(pRRophetic) 
+library(SimDesign) 
+library(ggplot2) 
+library(cowplot) 
+
+Sys.setenv(LANGUAGE = "en") 
+options(stringsAsFactors = FALSE)
+
+display.progress = function (index, totalN, breakN=20) {
+  if ( index %% ceiling(totalN/breakN)  ==0  ) {
+    cat(paste(round(index*100/totalN), "% ", sep=""))
+  }
+} 
+
+tumoexpr<-as.matrix(early_luad_expr)
+pure.tumoexpr <- tumoexpr
+
+# CTRP AUCprepare
+auc <- read.table("CTRP_AUC_raw.txt",sep = "\t",row.names = NULL,check.names = F,stringsAsFactors = F,header = T) # Supplementary Data Set 3
+auc$comb <- paste(auc$master_cpd_id,auc$master_ccl_id,sep = "-")
+auc <- apply(auc[,"area_under_curve",drop = F], 2, function(x) tapply(x, INDEX=factor(auc$comb), FUN=max, na.rm=TRUE)) # 重复项取最大AUC
+auc <- as.data.frame(auc)
+auc$master_cpd_id <- sapply(strsplit(rownames(auc),"-",fixed = T),"[",1)
+auc$master_ccl_id <- sapply(strsplit(rownames(auc),"-",fixed = T),"[",2)
+auc <- reshape(auc, 
+               direction = "wide",
+               timevar = "master_cpd_id",
+               idvar = "master_ccl_id")
+colnames(auc) <- gsub("area_under_curve.","",colnames(auc),fixed = T)
+ctrp.ccl.anno <- read.table("CTRP_ccl_anno.txt",sep = "\t",row.names = NULL,check.names = F,stringsAsFactors = F,header = T) # Supplementary Data Set 1
+ctrp.cpd.anno <- read.delim("CTRP_cpd_anno.txt",sep = "\t",row.names = NULL,check.names = F,stringsAsFactors = F,header = T) # Supplementary Data Set 2
+# 
+write.table(auc,"CTRP_AUC.txt",sep = "\t",row.names = F,col.names = T,quote = F)
+
+# 
+ctrp.auc <- read.table("CTRP_AUC.txt",sep = "\t",row.names = 1,check.names = F,stringsAsFactors = F,header = T)
+prism.auc <- read.delim("PRISM_AUC.txt",sep = "\t",row.names = 1,check.names = F,stringsAsFactors = F,header = T) # 数据来自https://depmap.org/portal/download/ Drug sensitivity AUC (PRISM Repurposing Secondary Screen) 19Q4
+prism.ccl.anno <- prism.auc[,1:5] 
+prism.auc <- prism.auc[,-c(1:5)]
+
+## a.  missing>20%
+ctrp.auc <- ctrp.auc[,apply(ctrp.auc,2,function(x) sum(is.na(x))) < 0.2*nrow(ctrp.auc)]
+prism.auc <- prism.auc[,apply(prism.auc,2,function(x) sum(is.na(x))) < 0.2*nrow(prism.auc)]
+
+## b. remove haematopoietic_and_lymphoid_tissue cell line
+rmccl <- paste0("CCL",na.omit(ctrp.ccl.anno[which(ctrp.ccl.anno$ccle_primary_site == "haematopoietic_and_lymphoid_tissue"),"master_ccl_id"]))
+rownames(ctrp.auc) <- paste0("CCL",rownames(ctrp.auc))
+ctrp.auc <- ctrp.auc[setdiff(rownames(ctrp.auc),rmccl),]
+
+## c. KNN
+ctrp.auc.knn <- impute.knn(as.matrix(ctrp.auc))$data
+prism.auc.knn <- impute.knn(as.matrix(prism.auc))$data
+
+## d
+ctrp.auc.knn <- ctrp.auc.knn/ceiling(max(ctrp.auc.knn)) 
+prism.auc.knn <- prism.auc.knn/ceiling(max(prism.auc.knn))
+
+
+
+# CCLE
+ccl.expr <- read.table("CCLE_RNAseq_rsem_genes_tpm_20180929.txt",sep = "\t",row.names = 1,check.names = F,stringsAsFactors = F,header = T) 
+
+# 
+Ginfo <- read.table("overlapTable27.txt",sep = "\t",row.names = 1,check.names = F,stringsAsFactors = F,header = T) # 参考FigureYa34count2FPKMv2制作的基因注释文件
+
+# 
+ccl.expr <- ccl.expr[,-1]; rownames(ccl.expr) <- sapply(strsplit(rownames(ccl.expr),".",fixed = T),"[",1)
+comgene <- intersect(rownames(ccl.expr),rownames(Ginfo))
+ccl.expr <- ccl.expr[comgene,]
+ccl.expr$gene <- Ginfo[comgene,"genename"]; ccl.expr <- ccl.expr[!duplicated(ccl.expr$gene),]; rownames(ccl.expr) <- ccl.expr$gene; ccl.expr <- ccl.expr[,-ncol(ccl.expr)]
+
+
+
+keepgene <- apply(ccl.expr, 1, mad) > 0.5 # 
+trainExpr <- log2(ccl.expr[keepgene,] + 1)
+colnames(trainExpr) <- sapply(strsplit(colnames(trainExpr),"_",fixed = T),"[",1) # 
+trainPtype <- as.data.frame(ctrp.auc.knn)
+ccl.name <- ccl.miss <- c() # 
+for (i in rownames(trainPtype)) {
+  if(!is.element(gsub("CCL","",i),ctrp.ccl.anno$master_ccl_id)) {
+    cat(i,"\n")
+    ccl.miss <- c(ccl.miss, i) # 
+    ccl.name <- c(ccl.name, i) # 
+  } else {
+    ccl.name <- c(ccl.name,  ctrp.ccl.anno[which(ctrp.ccl.anno$master_ccl_id == gsub("CCL","",i)),"ccl_name"]) # 插入匹配的细胞系
+  }
+}
+
+cpd.name <- cpd.miss <- c() # 
+for (i in colnames(trainPtype)) {
+  if(!is.element(i,ctrp.cpd.anno$master_cpd_id)) {
+    cat(i,"\n")
+    cpd.miss <- c(cpd.miss, i) # 
+    cpd.name <- c(cpd.name, i) # 
+  } else {
+    cpd.name <- c(cpd.name,  ctrp.cpd.anno[which(ctrp.cpd.anno$master_cpd_id == i),"cpd_name"]) # 
+  }
+}
+
+rownames(trainPtype) <- ccl.name
+trainPtype <- trainPtype[setdiff(rownames(trainPtype),ccl.miss),] # 
+colnames(trainPtype) <- cpd.name
+trainPtype <- trainPtype[,setdiff(colnames(trainPtype),cpd.miss)] # 
+comccl <- intersect(rownames(trainPtype),colnames(trainExpr)) # 
+trainExpr <- trainExpr[,comccl]
+trainPtype <- trainPtype[comccl,]
+
+# 
+keepgene <- apply(pure.tumoexpr, 1, mad) > 0.5 # 
+testExpr <- pure.tumoexpr[keepgene,] 
+# 
+comgene <- intersect(rownames(trainExpr),rownames(testExpr)) 
+trainExpr <- as.matrix(trainExpr[comgene,])
+testExpr <- testExpr[comgene,]
+
+##
+outTab <- NULL
+# 
+for (i in 1:ncol(trainPtype)) { 
+  display.progress(index = i,totalN = ncol(trainPtype))
+  d <- colnames(trainPtype)[i]
+  tmp <- log2(as.vector(trainPtype[,d]) + 0.00001) # 
+  
+  # 
+  ptypeOut <- quiet(calcPhenotype(trainingExprData = trainExpr,
+                                  trainingPtype = tmp,
+                                  testExprData = testExpr,
+                                  powerTransformPhenotype = F,
+                                  selection = 1))
+  ptypeOut <- 2^ptypeOut - 0.00001 # 
+  outTab <- rbind.data.frame(outTab,ptypeOut)
+}
+dimnames(outTab) <- list(colnames(trainPtype),colnames(testExpr))
+ctrp.pred.auc <- outTab
+
+###PRISM
+
+keepgene <- apply(ccl.expr, 1, mad) > 0.5
+trainExpr <- log2(ccl.expr[keepgene,] + 1)
+colnames(trainExpr) <- sapply(strsplit(colnames(trainExpr),"_",fixed = T),"[",1)
+trainPtype <- as.data.frame(prism.auc.knn)
+rownames(trainPtype) <- prism.ccl.anno[rownames(trainPtype),"cell_line_display_name"]
+#colnames(trainPtype) <- sapply(strsplit(colnames(trainPtype)," (",fixed = T), "[",1)
+comccl <- intersect(rownames(trainPtype),colnames(trainExpr))
+trainExpr <- trainExpr[,comccl]
+trainPtype <- trainPtype[comccl,]
+
+# 
+keepgene <- apply(pure.tumoexpr, 1, mad) > 0.5
+testExpr <- pure.tumoexpr[keepgene,]
+comgene <- intersect(rownames(trainExpr),rownames(testExpr))
+trainExpr <- as.matrix(trainExpr[comgene,])
+testExpr <- testExpr[comgene,]
+
+#
+outTab <- NULL
+# 
+for (i in 1:ncol(trainPtype)) { 
+  display.progress(index = i,totalN = ncol(trainPtype))
+  d <- colnames(trainPtype)[i]
+  tmp <- log2(as.vector(trainPtype[,d]) + 0.00001) # 
+  ptypeOut <- quiet(calcPhenotype(trainingExprData = trainExpr,
+                                  trainingPtype = tmp,
+                                  testExprData = testExpr,
+                                  powerTransformPhenotype = F,
+                                  selection = 1))
+  ptypeOut <- 2^ptypeOut - 0.00001 # 
+  outTab <- rbind.data.frame(outTab,ptypeOut)
+}
+dimnames(outTab) <- list(colnames(trainPtype),colnames(testExpr))
+prism.pred.auc <- outTab
+
+#
+ann_c1<-subset(ann,ann$cluster=="C1")
+ann_c2<-subset(ann,ann$cluster=="C2")
+
+##C1
+ctrp.log2fc.c1 <- c()
+for (i in 1:nrow(ctrp.pred.auc)) {
+  display.progress(index = i,totalN = nrow(ctrp.pred.auc))
+  d <- rownames(ctrp.pred.auc)[i]
+  a <- mean(as.numeric(ctrp.pred.auc[d,rownames(ann_c1)])) # 
+  b <- mean(as.numeric(ctrp.pred.auc[d,rownames(ann_c2)])) # 
+  fc <- b/a
+  log2fc <- log2(fc); names(log2fc) <- d
+  ctrp.log2fc.c1 <- c(ctrp.log2fc.c1,log2fc)
+}
+candidate.ctrp.c1 <- ctrp.log2fc.c1[ctrp.log2fc.c1 > 0.2] # 
+
+prism.log2fc.c1 <- c()
+for (i in 1:nrow(prism.pred.auc)) {
+  display.progress(index = i,totalN = nrow(prism.pred.auc))
+  d <- rownames(prism.pred.auc)[i]
+  a <- mean(as.numeric(prism.pred.auc[d,rownames(ann_c1)])) # 
+  b <- mean(as.numeric(prism.pred.auc[d,rownames(ann_c2)])) # 
+  fc <- b/a
+  log2fc <- log2(fc); names(log2fc) <- d
+  prism.log2fc.c1 <- c(prism.log2fc.c1,log2fc)
+}
+candidate.prism.c1 <- prism.log2fc.c1[prism.log2fc.c1 > 0.2] 
+
+##C2
+ctrp.log2fc.c2 <- c()
+for (i in 1:nrow(ctrp.pred.auc)) {
+  display.progress(index = i,totalN = nrow(ctrp.pred.auc))
+  d <- rownames(ctrp.pred.auc)[i]
+  a <- mean(as.numeric(ctrp.pred.auc[d,rownames(ann_c2)])) # 
+  b <- mean(as.numeric(ctrp.pred.auc[d,rownames(ann_c1)])) # 
+  fc <- b/a
+  log2fc <- log2(fc); names(log2fc) <- d
+  ctrp.log2fc.c2 <- c(ctrp.log2fc.c2,log2fc)
+}
+candidate.ctrp.c2 <- ctrp.log2fc.c2[ctrp.log2fc.c2 > 0.2] # 
+
+prism.log2fc.c2 <- c()
+for (i in 1:nrow(prism.pred.auc)) {
+  display.progress(index = i,totalN = nrow(prism.pred.auc))
+  d <- rownames(prism.pred.auc)[i]
+  a <- mean(as.numeric(prism.pred.auc[d,rownames(ann_c2)])) # 
+  b <- mean(as.numeric(prism.pred.auc[d,rownames(ann_c1)])) # 
+  fc <- b/a
+  log2fc <- log2(fc); names(log2fc) <- d
+  prism.log2fc.c2 <- c(prism.log2fc.c2,log2fc)
+}
+candidate.prism.c2 <- prism.log2fc.c2[prism.log2fc.c2 > 0.2] 
+
+
+
+##
+darkblue <- "#0772B9"
+lightblue <- "#48C8EF"
+
+ctrp.candidate.c1<-names(candidate.ctrp.c1)
+ctrp.boxdata <- NULL
+for (d in ctrp.candidate.c1) {
+  a <- as.numeric(ctrp.pred.auc[d,rownames(ann_c1)]) 
+  b <- as.numeric(ctrp.pred.auc[d,rownames(ann_c2)])
+  p <- wilcox.test(a,b)$p.value
+  s <- as.character(cut(p,c(0,0.001,0.01,0.05,1),labels = c("***","**","*","")))
+  ctrp.boxdata <- rbind.data.frame(ctrp.boxdata,
+                                   data.frame(drug = d,
+                                              auc = c(a,b),
+                                              p = p,
+                                              s = s,
+                                              group = rep(c("C1","C2"),c(nrow(ann_c1),nrow(ann_c2))),
+                                              stringsAsFactors = F),
+                                   stringsAsFactors = F)
+}
+p3 <- ggplot(ctrp.boxdata, aes(drug, auc, fill=group)) + 
+  geom_boxplot(aes(col = group),outlier.shape = NA) + 
+  # geom_text(aes(drug, y=min(auc) * 1.1, 
+  #               label=paste("p=",formatC(p,format = "e",digits = 1))),
+  #           data=ctrp.boxdata, 
+  #           inherit.aes=F) + 
+  geom_text(aes(drug, y=max(auc)), 
+            label=ctrp.boxdata$s,
+            data=ctrp.boxdata, 
+            inherit.aes=F) + 
+  scale_fill_manual(values = c(darkblue, lightblue)) + 
+  scale_color_manual(values = c(darkblue, lightblue)) + 
+  xlab(NULL) + ylab("Estimated AUC value") + 
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5,vjust = 0.5,size = 10),
+        legend.position = "bottom",
+        legend.title = element_blank()) 
+dat <- ggplot_build(p3)$data[[1]]
+
+p3 <- p3 + geom_segment(data=dat, aes(x=xmin, xend=xmax, y=middle, yend=middle), color="white", inherit.aes = F)
+
+prism.candidate.c1<-names(candidate.prism.c1)
+prism.boxdata <- NULL
+for (d in prism.candidate.c1) {
+  a <- as.numeric(prism.pred.auc[d,rownames(ann_c1)]) 
+  b <- as.numeric(prism.pred.auc[d,rownames(ann_c2)])
+  p <- wilcox.test(a,b)$p.value
+  s <- as.character(cut(p,c(0,0.001,0.01,0.05,1),labels = c("***","**","*","")))
+  prism.boxdata <- rbind.data.frame(prism.boxdata,
+                                    data.frame(drug = d,
+                                               auc = c(a,b),
+                                               p = p,
+                                               s = s,
+                                               group = rep(c("C1","C2"),c(nrow(ann_c1),nrow(ann_c2))),
+                                               stringsAsFactors = F),
+                                    stringsAsFactors = F)
+}
+prism.boxdata$drug <- sapply(strsplit(prism.boxdata$drug," (",fixed = T), "[",1)
+
+p4 <- ggplot(prism.boxdata, aes(drug, auc, fill=group)) + 
+  geom_boxplot(aes(col = group),outlier.shape = NA) + 
+  # geom_text(aes(drug, y=min(auc) * 1.1, 
+  #               label=paste("p=",formatC(p,format = "e",digits = 1))),
+  #           data=prism.boxdata, 
+  #           inherit.aes=F) + 
+  geom_text(aes(drug, y=max(auc)), 
+            label=prism.boxdata$s,
+            data=prism.boxdata, 
+            inherit.aes=F) + 
+  scale_fill_manual(values = c(darkblue, lightblue)) + 
+  scale_color_manual(values = c(darkblue, lightblue)) + 
+  xlab(NULL) + ylab("Estimated AUC value") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5,vjust = 0.5,size = 10),
+        legend.position = "bottom",
+        legend.title = element_blank())
+dat <- ggplot_build(p4)$data[[1]]
+
+p4 <- p4 + geom_segment(data=dat, aes(x=xmin, xend=xmax, y=middle, yend=middle), color="white", inherit.aes = F)
+
+
+prism.candidate.c2<-names(candidate.prism.c2)
+prism.boxdata <- NULL
+for (d in prism.candidate.c2) {
+  a <- as.numeric(prism.pred.auc[d,rownames(ann_c1)]) 
+  b <- as.numeric(prism.pred.auc[d,rownames(ann_c2)])
+  p <- wilcox.test(a,b)$p.value
+  s <- as.character(cut(p,c(0,0.001,0.01,0.05,1),labels = c("***","**","*","")))
+  prism.boxdata <- rbind.data.frame(prism.boxdata,
+                                    data.frame(drug = d,
+                                               auc = c(a,b),
+                                               p = p,
+                                               s = s,
+                                               group = rep(c("C1","C2"),c(nrow(ann_c1),nrow(ann_c2))),
+                                               stringsAsFactors = F),
+                                    stringsAsFactors = F)
+}
+prism.boxdata$drug <- sapply(strsplit(prism.boxdata$drug," (",fixed = T), "[",1)
+
+p5 <- ggplot(prism.boxdata, aes(drug, auc, fill=group)) + 
+  geom_boxplot(aes(col = group),outlier.shape = NA) + 
+  # geom_text(aes(drug, y=min(auc) * 1.1, 
+  #               label=paste("p=",formatC(p,format = "e",digits = 1))),
+  #           data=prism.boxdata, 
+  #           inherit.aes=F) + 
+  geom_text(aes(drug, y=max(auc)), 
+            label=prism.boxdata$s,
+            data=prism.boxdata, 
+            inherit.aes=F) + 
+  scale_fill_manual(values = c(darkblue, lightblue)) + 
+  scale_color_manual(values = c(darkblue, lightblue)) + 
+  xlab(NULL) + ylab("Estimated AUC value") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.5,vjust = 0.5,size = 10),
+        legend.position = "bottom",
+        legend.title = element_blank())
+dat <- ggplot_build(p5)$data[[1]]
+
+p5 <- p5 + geom_segment(data=dat, aes(x=xmin, xend=xmax, y=middle, yend=middle), color="white", inherit.aes = F)
+
+plot_grid(p4,p3,
+          ncol=2, 
+          rel_widths = c(1, 2)) 
+write.table(ctrp.log2fc.c1,"ctrp.log2fc.c1.txt",sep = "\t",quote = F)
+write.table(prism.log2fc.c1,"prism.log2fc.c1.txt",sep = "\t",quote = F)
+write.table(ctrp.pred.auc,"ctrp.pred.auc.txt",sep = "\t",quote = F)
+write.table(prism.pred.auc,"prism.pred.auc.txt",sep = "\t",quote = F)
+
+
+###Cmap
+library(limma)
+
+c1_sam<-rownames(subset(ann,ann$cluster=="C1"))
+c2_sam<-rownames(subset(ann,ann$cluster=="C2"))
+
+##limma   
+pd <- data.frame(Samples = c(c1_sam,c2_sam),
+                 Group = rep(c("tumor","normal"),c(length(c1_sam),length(c2_sam))),
+                 stringsAsFactors = FALSE)
+design <-model.matrix(~ -1 + factor(pd$Group, levels = c("tumor","normal")))
+colnames(design) <- c("tumor","normal")
+gset <- early_luad_expr[,pd$Samples]
+fit <- limma::lmFit(gset, design = design);
+contrastsMatrix <- limma::makeContrasts(tumor - normal, levels = c("tumor", "normal"))
+fit2 <- limma::contrasts.fit(fit, contrasts = contrastsMatrix)
+fit2 <- limma::eBayes(fit2, 0.01)
+resData <- limma::topTable(fit2, adjust = "fdr", sort.by = "B", number = 100000)
+resData <- as.data.frame(subset(resData, select=c("logFC","t","B","P.Value","adj.P.Val")))
+resData$id <- rownames(resData)
+colnames(resData) <- c("log2fc","t","B","pvalue","padj","id")
+resData$fc <- 2^resData$log2fc
+resData <- resData[order(resData$padj),c("id","fc","log2fc","pvalue","padj")]
+
+##
+ngene <- 150
+degs <- na.omit(resData[order(resData$log2fc,decreasing = T),])
+updegs <- rownames(degs)[1:ngene]
+dndegs <- rownames(degs)[(nrow(degs)-ngene + 1):nrow(degs)]
+cmap.input <- data.frame(up = updegs,
+                         dn = dndegs,
+                         stringsAsFactors = F)
+write.table(cmap.input,"CMap_input.txt",sep = "\t",row.names = F,col.names = T,quote = F)
+
+
+
+
+
+###GDSC
+library(pRRophetic)
+library(ggplot2)
+library(cowplot)
+GCP.drug <- read.table("drug_eg.txt")
+GCP.drug <- GCP.drug$V1
+
+jco <- c("#EABF00", "#2874C5", "red")
+GCPinfo <- GCP.IC50 <- GCP.expr <- cvOut <- predictedPtype <- predictedBoxdat <- list() 
+plotp <- list()
+
+for (drug in GCP.drug) {
+  set.seed(1234567) #
+  cat(drug," starts!\n") # 
+  
+  # IC50
+  predictedPtype[[drug]] <- pRRopheticPredict(testMatrix = as.matrix(early_luad_expr[,rownames(ann)]),
+                                              drug = drug,
+                                              tissueType = "allSolidTumors",
+                                              selection = 1) 
+  
+  if(!all(names(predictedPtype[[drug]])==rownames(ann))) {stop("Name mismatched!\n")} 
+  
+  predictedBoxdat[[drug]] <- data.frame("est.ic50"=predictedPtype[[drug]],
+                                        "cluster"=ifelse(ann$cluster == "C1","C1","C2"), 
+                                        row.names = names(predictedPtype[[drug]])) 
+  predictedBoxdat[[drug]]$cluster <- factor(predictedBoxdat[[drug]]$cluster,levels = c("C1","C2"),ordered = T) 
+  
+  # 
+  p <- ggplot(data = predictedBoxdat[[drug]], aes(x=cluster, y=est.ic50))
+  p <- p + geom_boxplot(aes(fill = cluster)) + theme_classic()+
+    scale_fill_manual(values = jco[1:length(unique(ann$cluster))]) + 
+    theme(legend.position="none") + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 12),plot.title = element_text(size = 12, hjust = 0.5)) + 
+    xlab("") + ylab("Estimated IC50") + 
+    ggtitle(drug) 
+  
+  plotp[[drug]] <- p 
+  cat(drug," has been finished!\n") 
+}
+
+
+p2 <- plot_grid(plotlist=plotp, ncol=3)
+
+p <- vector()
+for (drug in GCP.drug) {
+  tmp <- wilcox.test(as.numeric(predictedBoxdat[[drug]][which(predictedBoxdat[[drug]]$cluster %in% "C1"),"est.ic50"]),
+                     as.numeric(predictedBoxdat[[drug]][which(predictedBoxdat[[drug]]$cluster %in% "C2"),"est.ic50"]),alternative = "less")$p.value
+  p <- append(p,tmp) 
+}
+names(p) <- GCP.drug
+print(p) 
+
+#Gefitini test EGFRalteration####
+mut=data.frame(egrf=EGFRmutSample,class="mut",row.names = EGFRmutSample)
+wt=data.frame(egrf=EGFRwildSample,class="wt",row.names = EGFRwildSample)
+egfr<-rbind(mut,wt)
+ctrp.pred.gefi<-as.data.frame(t(ctrp.pred["gefitinib",]))
+prism.pred.gefi<-as.data.frame(t(prism.pred["gefitinib",]))
+rownames(ctrp.pred.gefi)<-gsub(".","-",rownames(ctrp.pred.gefi),fixed = T)
+rownames(prism.pred.gefi)<-gsub(".","-",rownames(prism.pred.gefi),fixed = T)
+cosam<-intersect(rownames(ctrp.pred.gefi),rownames(egfr))
+ctrp.pred.gefi<-data.frame(auc=ctrp.pred.gefi[cosam,],row.names = cosam)
+egfr<-egfr[cosam,]
+ctrp.gefi.auc<-cbind(ctrp.pred.gefi,egfr)
+
+cosam<-intersect(rownames(prism.pred.gefi),rownames(egfr))
+prism.pred.gefi<-data.frame(auc=prism.pred.gefi[cosam,],row.names = cosam)
+egfr<-egfr[cosam,]
+prism.gefi.auc<-cbind(prism.pred.gefi,egfr)
+
+
+jco <- c("#2874C5","#EABF00")
+
+p <- wilcox.test(ctrp.gefi.auc[which(ctrp.gefi.auc$class == "wt"),"auc"],
+                 ctrp.gefi.auc[which(ctrp.gefi.auc$class == "mut"),"auc"])$p.value
+
+ggplot(data = ctrp.gefi.auc,aes(x = class, y = auc, fill = class))+
+  scale_fill_manual(values = jco[2:1]) + 
+  geom_violin(alpha=0.4, position = position_dodge(width = .75),
+              size=0.8, color="black") + 
+  geom_boxplot(notch = TRUE, outlier.size = -1, 
+               color="black", lwd=0.8, alpha = 0.7)+ 
+  geom_point(shape = 21, size=2, 
+             position = position_jitterdodge(), 
+             color="black", alpha=1)+ 
+  theme_classic() +
+  ylab(expression("AUC")) +
+  xlab("")  +
+  annotate(geom="text", cex=6,
+           x=1.5, y=0.45, 
+           label=paste0("P ", ifelse(p<0.001, "< 0.001", paste0("= ",round(p,3)))), 
+           color="black") + 
+  theme(#panel.border = element_rect(colour = "black", fill=NA, size=0.2), 
+    axis.ticks = element_line(size=0.2,color="black"),
+    axis.ticks.length = unit(0.2,"cm"),
+    legend.position = "none",
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10))
+
+
+p <- wilcox.test(prism.gefi.auc[which(prism.gefi.auc$class == "wt"),"auc"],
+                 prism.gefi.auc[which(prism.gefi.auc$class == "mut"),"auc"])$p.value
+
+ggplot(data = prism.gefi.auc,aes(x = class, y = auc, fill = class))+
+  scale_fill_manual(values = jco[2:1]) + 
+  geom_violin(alpha=0.4, position = position_dodge(width = .75),
+              size=0.8, color="black") + 
+  geom_boxplot(notch = TRUE, outlier.size = -1, 
+               color="black", lwd=0.8, alpha = 0.7)+ 
+  geom_point(shape = 21, size=2, 
+             position = position_jitterdodge(), 
+             color="black", alpha=1)+ 
+  theme_classic() +
+  ylab(expression("AUC")) +
+  xlab("")  +
+  annotate(geom="text", cex=6,
+           x=1.5, y=0.20, 
+           label=paste0("P ", ifelse(p<0.001, "< 0.001", paste0("= ",round(p,3)))), 
+           color="black") + 
+  theme(#panel.border = element_rect(colour = "black", fill=NA, size=0.2), 
+    axis.ticks = element_line(size=0.2,color="black"),
+    axis.ticks.length = unit(0.2,"cm"),
+    legend.position = "none",
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10))
